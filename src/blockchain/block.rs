@@ -1,6 +1,4 @@
-use serde_json::error::Category::Data;
-
-use crate::blockchain::tmp::{Address, Transaction};
+use crate::blockchain::transaction::{Address, Transaction};
 
 #[derive(Debug, Clone)]
 pub struct Block {
