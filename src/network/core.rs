@@ -1,4 +1,10 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::{
+    net::SocketAddr,
+    sync::{
+        Arc,
+        atomic::{AtomicUsize, Ordering},
+    },
+};
 
 use dashmap::{DashMap, mapref::one::RefMut};
 use tokio::{
@@ -18,6 +24,8 @@ pub struct Network {
 
     ongoing_connections: DashMap<SocketAddr, OwnedWriteHalf>,
     connections: DashMap<SocketAddr, OwnedWriteHalf>,
+
+    connections_number: AtomicUsize,
 }
 
 impl Network {
@@ -66,6 +74,7 @@ impl Network {
 
             network.ongoing_connections.remove(&addr);
             network.connections.remove(&addr);
+            network.decrement_connections();
 
             if let Err(error) = result {
                 todo!("Handle connection error: {error}");
@@ -107,11 +116,25 @@ impl Network {
             .ok_or(NetworkError::TcpStreamNotConnected(addr))?;
 
         self.connections.insert(addr, writer);
+        self.increment_connections();
 
         Ok(())
     }
 
     pub(crate) fn states(&self) -> &StateHandler {
         &self.states
+    }
+
+    pub(crate) fn increment_connections(&self) {
+        self.connections_number.fetch_add(1, Ordering::Relaxed);
+    }
+
+    pub(crate) fn decrement_connections(&self) {
+        self.connections_number.fetch_sub(1, Ordering::Relaxed);
+    }
+
+    #[allow(unused)]
+    pub(crate) fn get_connections_number(&self) -> usize {
+        self.connections_number.load(Ordering::Relaxed)
     }
 }
