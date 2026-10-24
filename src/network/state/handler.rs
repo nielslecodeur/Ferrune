@@ -32,6 +32,10 @@ impl Default for StateHandler {
 }
 
 impl StateHandler {
+    pub(crate) fn get_state(&self, id: Uuid) -> Option<State> {
+        self.map.get(&id).map(|entry| entry.state())
+    }
+
     pub(crate) fn register_state(&self, id: Uuid, state: State) -> Result<(), StateError> {
         if state == State::None {
             return Ok(());

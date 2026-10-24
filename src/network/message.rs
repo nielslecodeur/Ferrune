@@ -5,6 +5,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::tcp::OwnedReadHalf;
 use uuid::Uuid;
 
+use crate::StateError;
 use crate::network::{Network, actions};
 use crate::network::{NetworkError, State};
 
@@ -32,9 +33,9 @@ impl Message {
 
     pub fn state(&self) -> State {
         match &self.r#type {
-            MessageType::LetsConnect => State::WaitingForChainId,
-            MessageType::ChainId(_) => State::WaitingForRegistration,
-            MessageType::Register => State::None,
+            MessageType::LetsConnect => State::StartingConnection,
+            MessageType::ChainId(_) => State::WaitingForChainId,
+            MessageType::Register => State::WaitingForRegistration,
         }
     }
 
@@ -65,14 +66,27 @@ impl Message {
             while let Some(line) = lines.next_line().await? {
                 let message: Self = serde_json::from_str(&line)?;
 
-                if message.r#type.is_conversation_start() {
+                if message.state().is_conversation_start() {
                     network
                         .states()
                         .register_state(message.id(), message.state())?;
                 }
 
-                message.action(addr, &network).await?;
+                let expected = network
+                    .states()
+                    .get_state(message.id())
+                    .ok_or(StateError::ConversationNotStarted(message.id()))?;
 
+                if expected != message.state() {
+                    return Err(StateError::UnexpectedState {
+                        id: message.id(),
+                        expected,
+                        received: message.state(),
+                    }
+                    .into());
+                }
+
+                message.action(addr, &network).await?;
                 network.states().set_next_state(message.id())?;
             }
 
@@ -87,10 +101,4 @@ pub enum MessageType {
     LetsConnect,
     ChainId(u8),
     Register,
-}
-
-impl MessageType {
-    pub fn is_conversation_start(&self) -> bool {
-        matches!(self, Self::LetsConnect)
-    }
 }

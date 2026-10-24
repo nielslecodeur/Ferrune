@@ -85,6 +85,7 @@ impl Network {
         let message = Message::new(message_type, None);
 
         self.states.register_state(message.id(), message.state())?;
+        self.states.set_next_state(message.id())?;
         self.send(addr, &message).await
     }
 

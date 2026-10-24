@@ -36,4 +36,8 @@ impl Statettl {
 
         None
     }
+
+    pub(super) fn state(&self) -> State {
+        self.state
+    }
 }
