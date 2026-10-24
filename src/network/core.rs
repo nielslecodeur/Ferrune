@@ -12,12 +12,12 @@ use crate::network::{
     state::StateHandler,
 };
 
-#[derive(Clone, Default)]
+#[derive(Default)]
 pub struct Network {
-    states: Arc<StateHandler>,
+    states: StateHandler,
 
-    ongoing_connections: Arc<DashMap<SocketAddr, OwnedWriteHalf>>,
-    connections: Arc<DashMap<SocketAddr, OwnedWriteHalf>>,
+    ongoing_connections: DashMap<SocketAddr, OwnedWriteHalf>,
+    connections: DashMap<SocketAddr, OwnedWriteHalf>,
 }
 
 impl Network {
@@ -31,7 +31,7 @@ impl Network {
             .ok_or(NetworkError::TcpStreamNotConnected(addr))
     }
 
-    pub async fn listen(&self, addr: SocketAddr) -> Result<(), NetworkError> {
+    pub async fn listen(self: Arc<Self>, addr: SocketAddr) -> Result<(), NetworkError> {
         let listener = TcpListener::bind(addr).await?;
 
         loop {
@@ -54,14 +54,13 @@ impl Network {
         }
     }
 
-    pub async fn connect_to(&self, addr: SocketAddr) -> Result<(), NetworkError> {
+    pub async fn connect_to(self: Arc<Self>, addr: SocketAddr) -> Result<(), NetworkError> {
         let stream = TcpStream::connect(addr).await?;
         let (reader, writer) = stream.into_split();
 
         self.ongoing_connections.insert(addr, writer);
 
         let network = self.clone();
-
         tokio::spawn(async move {
             let result = Message::handle(reader, addr, network.clone()).await;
 
@@ -112,7 +111,7 @@ impl Network {
         Ok(())
     }
 
-    pub(crate) fn states(&self) -> &Arc<StateHandler> {
+    pub(crate) fn states(&self) -> &StateHandler {
         &self.states
     }
 }

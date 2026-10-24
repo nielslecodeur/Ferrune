@@ -1,13 +1,13 @@
-use std::net::SocketAddr;
-
 use serde::{Deserialize, Serialize};
+use std::net::SocketAddr;
+use std::sync::Arc;
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::tcp::OwnedReadHalf;
 use uuid::Uuid;
 
 use crate::StateError;
-use crate::network::{Network, actions};
-use crate::network::{NetworkError, State};
+use crate::network::{Network, NetworkError, State};
+use crate::node::actions;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct Message {
@@ -58,41 +58,39 @@ impl Message {
     pub(crate) async fn handle(
         reader: OwnedReadHalf,
         addr: SocketAddr,
-        network: Network,
+        network: Arc<Network>,
     ) -> Result<(), NetworkError> {
         let mut lines = BufReader::new(reader).lines();
 
-        async {
-            while let Some(line) = lines.next_line().await? {
-                let message: Self = serde_json::from_str(&line)?;
+        while let Some(line) = lines.next_line().await? {
+            let message: Self = serde_json::from_str(&line)?;
 
-                if message.state().is_conversation_start() {
-                    network
-                        .states()
-                        .register_state(message.id(), message.state())?;
-                }
-
-                let expected = network
+            if message.state().is_conversation_start() {
+                network
                     .states()
-                    .get_state(message.id())
-                    .ok_or(StateError::ConversationNotStarted(message.id()))?;
-
-                if expected != message.state() {
-                    return Err(StateError::UnexpectedState {
-                        id: message.id(),
-                        expected,
-                        received: message.state(),
-                    }
-                    .into());
-                }
-
-                message.action(addr, &network).await?;
-                network.states().set_next_state(message.id())?;
+                    .register_state(message.id(), message.state())?;
             }
 
-            Ok::<(), NetworkError>(())
+            let expected = network
+                .states()
+                .get_state(message.id())
+                .ok_or(StateError::ConversationNotStarted(message.id()))?;
+
+            if expected != message.state() {
+                return Err(StateError::UnexpectedState {
+                    id: message.id(),
+                    expected,
+                    received: message.state(),
+                }
+                .into());
+            }
+
+            message.action(addr, &network).await?;
+
+            network.states().set_next_state(message.id())?;
         }
-        .await
+
+        Ok(())
     }
 }
 
