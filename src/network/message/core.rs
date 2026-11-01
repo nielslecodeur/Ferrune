@@ -5,6 +5,7 @@ use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::tcp::OwnedReadHalf;
 use uuid::Uuid;
 
+use super::MessageType;
 use crate::StateError;
 use crate::network::{Network, NetworkError, State};
 use crate::node::actions;
@@ -92,11 +93,4 @@ impl Message {
 
         Ok(())
     }
-}
-
-#[derive(Debug, Serialize, Deserialize)]
-pub enum MessageType {
-    LetsConnect,
-    ChainId(u8),
-    Register,
 }
