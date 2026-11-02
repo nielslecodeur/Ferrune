@@ -58,7 +58,11 @@ impl Message {
             ),
             MessageType::Reject(_) => matches!(
                 expected,
-                State::WaitingForBlockConfirmation | State::WaitingForTransactionConfirmation
+                State::WaitingForChainId
+                    | State::WaitingForRegistration
+                    | State::WaitingForConfirmation
+                    | State::WaitingForBlockConfirmation
+                    | State::WaitingForTransactionConfirmation
             ),
             _ => self.state() == expected,
         }
@@ -114,15 +118,17 @@ impl Message {
                 actions::sync::send_blocks(self.id, *from, addr, network).await
             }
             MessageType::Blocks(blocks) => actions::sync::receive_blocks(blocks, addr, network),
-            MessageType::Reject(reason) => {
-                match expected {
-                    State::WaitingForTransactionConfirmation => {
-                        actions::transaction::reject_transaction(reason, addr, network)
-                    }
-                    _ => actions::block::reject_block(reason, addr, network),
+            MessageType::Reject(reason) => match expected {
+                State::WaitingForBlockConfirmation => {
+                    actions::block::reject_block(reason, addr, network);
+                    Ok(())
                 }
-                Ok(())
-            }
+                State::WaitingForTransactionConfirmation => {
+                    actions::transaction::reject_transaction(reason, addr, network);
+                    Ok(())
+                }
+                _ => actions::connection::reject_connection(reason),
+            },
             MessageType::Ping => actions::health::send_pong(self.id, addr, network).await,
             MessageType::Pong => {
                 actions::health::receive_pong(addr, network);

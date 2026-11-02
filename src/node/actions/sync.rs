@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use tracing::info;
+use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::blockchain::block::Block;
@@ -41,18 +41,22 @@ pub(crate) fn receive_blocks(
     addr: SocketAddr,
     network: &Network,
 ) -> Result<(), NetworkError> {
+    let peer = network.peer_listen_addr(addr);
+
     if blocks.len() > MAX_BLOCKS_PER_MESSAGE {
-        return Err(NetworkError::InvalidBlock);
+        warn!(%peer, count = blocks.len(), "Too many blocks received, ignoring them");
+        return Ok(());
     }
 
     for block in blocks {
         if !block.has_valid_hash()? {
-            return Err(NetworkError::InvalidBlock);
+            warn!(%peer, height = block.height, "Invalid block received, ignoring the batch");
+            return Ok(());
         }
     }
 
     info!(
-        peer = %network.peer_listen_addr(addr),
+        %peer,
         count = blocks.len(),
         first = ?blocks.first().map(|block| block.height),
         last = ?blocks.last().map(|block| block.height),

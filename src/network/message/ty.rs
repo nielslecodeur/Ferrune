@@ -30,4 +30,6 @@ pub(crate) enum MessageType {
 pub(crate) enum RejectReason {
     InvalidBlockHash,
     InvalidTransaction,
+    DifferentChain,
+    AlreadyConnected,
 }

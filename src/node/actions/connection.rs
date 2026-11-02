@@ -4,7 +4,7 @@ use std::sync::Arc;
 use tracing::warn;
 use uuid::Uuid;
 
-use crate::network::message::{Message, MessageType};
+use crate::network::message::{Message, MessageType, RejectReason};
 use crate::network::{Network, NetworkError};
 
 /// Called on the accepting side: checks the initiator's chain, then answers with ours.
@@ -15,7 +15,7 @@ pub(crate) async fn send_chain_id(
     network: &Network,
 ) -> Result<(), NetworkError> {
     if chain_id != network.chain_id() {
-        return Err(NetworkError::DifferentChain);
+        return reject_different_chain(id, addr, network).await;
     }
 
     let message = Message::new(MessageType::ChainId(network.chain_id()), Some(id));
@@ -30,7 +30,7 @@ pub(crate) async fn verify_chain_id(
     network: &Network,
 ) -> Result<(), NetworkError> {
     if chain_id != network.chain_id() {
-        return Err(NetworkError::DifferentChain);
+        return reject_different_chain(id, addr, network).await;
     }
 
     let message = Message::new(MessageType::Register(network.listen_addr()), Some(id));
@@ -43,10 +43,32 @@ pub(crate) async fn register(
     listen_addr: SocketAddr,
     network: &Network,
 ) -> Result<(), NetworkError> {
-    network.register_connection(addr, listen_addr)?;
+    if let Err(error) = network.register_connection(addr, listen_addr) {
+        let message = Message::new(
+            MessageType::Reject(RejectReason::AlreadyConnected),
+            Some(id),
+        );
+        network.reply(addr, &message).await?;
+        return Err(error);
+    }
 
     let message = Message::new(MessageType::Ok, Some(id));
     network.reply(addr, &message).await
+}
+
+async fn reject_different_chain(
+    id: Uuid,
+    addr: SocketAddr,
+    network: &Network,
+) -> Result<(), NetworkError> {
+    let message = Message::new(MessageType::Reject(RejectReason::DifferentChain), Some(id));
+    network.reply(addr, &message).await?;
+
+    Err(NetworkError::DifferentChain)
+}
+
+pub(crate) fn reject_connection(reason: &RejectReason) -> Result<(), NetworkError> {
+    Err(NetworkError::ConnectionRejected(format!("{reason:?}")))
 }
 
 pub(crate) fn confirm_registration(

@@ -28,8 +28,8 @@ pub(crate) enum NetworkError {
     #[error("Timed out while connecting to {0}")]
     ConnectTimeout(SocketAddr),
 
-    #[error("Invalid block received")]
-    InvalidBlock,
+    #[error("Connection rejected by peer: {0}")]
+    ConnectionRejected(String),
 
     #[error("The chain is different")]
     DifferentChain,
