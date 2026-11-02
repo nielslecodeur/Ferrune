@@ -27,6 +27,21 @@ impl Blockchain {
         }
     }
 
+    pub fn height(&self) -> Option<u64> {
+        self.blocks.last().map(|block| block.height)
+    }
+
+    pub fn blocks_from(&self, from: u64, limit: usize) -> Vec<Block> {
+        let start = usize::try_from(from).unwrap_or(usize::MAX);
+
+        self.blocks
+            .iter()
+            .skip(start)
+            .take(limit)
+            .cloned()
+            .collect()
+    }
+
     pub fn validate_block(&self, block: &Block) -> Result<(), BlockchainError> {
         let valid_height = match self.blocks.last() {
             Some(previous_block) => previous_block

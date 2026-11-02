@@ -15,5 +15,9 @@ pub(crate) enum MessageType {
     NoPeerFound,
     SendBlock(Block),
     SendTransaction(Transaction),
+    AskHeight,
+    Height(Option<u64>),
+    AskBlocks { from: u64 },
+    Blocks(Vec<Block>),
     Ok,
 }

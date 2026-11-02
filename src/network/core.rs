@@ -1,5 +1,5 @@
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use dashmap::{DashMap, DashSet};
 use rand::RngExt;
@@ -11,8 +11,9 @@ use tokio::time::MissedTickBehavior;
 use tracing::{info, warn};
 
 use crate::blockchain::block::Block;
+use crate::blockchain::core::Blockchain;
 use crate::blockchain::transaction::Transaction;
-use crate::consts::{CONNECT_TIMEOUT, DISCOVERY_INTERVAL, MAX_PEERS};
+use crate::consts::{CONNECT_TIMEOUT, DISCOVERY_INTERVAL, MAX_BLOCKS_PER_MESSAGE, MAX_PEERS};
 use crate::network::NetworkError;
 use crate::network::message::{Message, MessageType};
 use crate::network::state::StateHandler;
@@ -22,6 +23,7 @@ type Writer = Arc<Mutex<OwnedWriteHalf>>;
 pub(crate) struct Network {
     listen_addr: SocketAddr,
     chain_id: u8,
+    blockchain: Arc<RwLock<Blockchain>>,
 
     states: StateHandler,
 
@@ -35,10 +37,15 @@ pub(crate) struct Network {
 }
 
 impl Network {
-    pub(crate) fn new(listen_addr: SocketAddr, chain_id: u8) -> Self {
+    pub(crate) fn new(
+        listen_addr: SocketAddr,
+        chain_id: u8,
+        blockchain: Arc<RwLock<Blockchain>>,
+    ) -> Self {
         Self {
             listen_addr,
             chain_id,
+            blockchain,
             states: StateHandler::default(),
             dialing: DashSet::new(),
             ongoing_connections: DashMap::new(),
@@ -53,6 +60,20 @@ impl Network {
 
     pub(crate) fn chain_id(&self) -> u8 {
         self.chain_id
+    }
+
+    pub(crate) fn height(&self) -> Option<u64> {
+        self.blockchain
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .height()
+    }
+
+    pub(crate) fn blocks_from(&self, from: u64) -> Vec<Block> {
+        self.blockchain
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .blocks_from(from, MAX_BLOCKS_PER_MESSAGE)
     }
 
     pub(crate) fn peer_listen_addr(&self, socket_addr: SocketAddr) -> SocketAddr {
@@ -189,6 +210,14 @@ impl Network {
                 warn!(%peer, %error, "Failed to send transaction");
             }
         }
+    }
+
+    pub(crate) async fn ask_height(&self, addr: SocketAddr) -> Result<(), NetworkError> {
+        self.converse(addr, MessageType::AskHeight).await
+    }
+
+    pub(crate) async fn ask_blocks(&self, addr: SocketAddr, from: u64) -> Result<(), NetworkError> {
+        self.converse(addr, MessageType::AskBlocks { from }).await
     }
 
     async fn converse(

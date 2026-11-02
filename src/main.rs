@@ -1,11 +1,14 @@
 use std::net::SocketAddr;
-use std::sync::Arc;
+use std::sync::{Arc, RwLock};
 
 use clap::Parser;
 use tracing::{error, info};
 use tracing_subscriber::EnvFilter;
 
-use crate::consts::{DEFAULT_BOOTSTRAP, MAIN_CHAIN_ID};
+use crate::blockchain::core::Blockchain;
+use crate::blockchain::state::State;
+use crate::blockchain::transaction::Address;
+use crate::consts::{DEFAULT_BOOTSTRAP, MAIN_CHAIN_ID, MINT_AUTHORITY};
 use crate::network::Network;
 
 mod blockchain;
@@ -50,7 +53,10 @@ async fn main() {
         .init();
 
     let args = Args::parse();
-    let network = Arc::new(Network::new(args.listen, args.chain_id));
+    let blockchain = Arc::new(RwLock::new(Blockchain::new(State::new(Address(
+        MINT_AUTHORITY.into(),
+    )))));
+    let network = Arc::new(Network::new(args.listen, args.chain_id, blockchain));
 
     let listener = tokio::spawn(network.clone().listen());
 

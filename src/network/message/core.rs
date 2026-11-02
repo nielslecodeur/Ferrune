@@ -38,6 +38,10 @@ impl Message {
             MessageType::Ok => State::WaitingForConfirmation,
             MessageType::SendBlock(_) => State::SendingBlock,
             MessageType::SendTransaction(_) => State::SendingTransaction,
+            MessageType::AskHeight => State::AskingHeight,
+            MessageType::Height(_) => State::WaitingForHeight,
+            MessageType::AskBlocks { .. } => State::AskingBlocks,
+            MessageType::Blocks(_) => State::WaitingForBlocks,
         }
     }
 
@@ -94,6 +98,15 @@ impl Message {
             MessageType::SendTransaction(transaction) => {
                 actions::transaction::receive_transaction(self.id, transaction, addr, network).await
             }
+            MessageType::AskHeight => actions::sync::send_height(self.id, addr, network).await,
+            MessageType::Height(height) => {
+                actions::sync::receive_height(*height, addr, network);
+                Ok(())
+            }
+            MessageType::AskBlocks { from } => {
+                actions::sync::send_blocks(self.id, *from, addr, network).await
+            }
+            MessageType::Blocks(blocks) => actions::sync::receive_blocks(blocks, addr, network),
         }
     }
 
