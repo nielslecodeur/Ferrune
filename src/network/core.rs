@@ -220,6 +220,19 @@ impl Network {
         self.converse(addr, MessageType::AskBlocks { from }).await
     }
 
+    pub(crate) async fn ping(&self, addr: SocketAddr) -> Result<(), NetworkError> {
+        self.converse(addr, MessageType::Ping).await
+    }
+
+    pub(crate) async fn disconnect(&self, addr: SocketAddr) -> Result<(), NetworkError> {
+        self.converse(addr, MessageType::Disconnect).await?;
+
+        let writer = self.get_writer(addr)?;
+        writer.lock().await.shutdown().await?;
+
+        Ok(())
+    }
+
     async fn converse(
         &self,
         addr: SocketAddr,

@@ -42,6 +42,9 @@ impl Message {
             MessageType::Height(_) => State::WaitingForHeight,
             MessageType::AskBlocks { .. } => State::AskingBlocks,
             MessageType::Blocks(_) => State::WaitingForBlocks,
+            MessageType::Ping => State::Pinging,
+            MessageType::Pong => State::WaitingForPong,
+            MessageType::Disconnect => State::Disconnecting,
         }
     }
 
@@ -107,6 +110,15 @@ impl Message {
                 actions::sync::send_blocks(self.id, *from, addr, network).await
             }
             MessageType::Blocks(blocks) => actions::sync::receive_blocks(blocks, addr, network),
+            MessageType::Ping => actions::health::send_pong(self.id, addr, network).await,
+            MessageType::Pong => {
+                actions::health::receive_pong(addr, network);
+                Ok(())
+            }
+            MessageType::Disconnect => {
+                actions::health::receive_disconnect(addr, network);
+                Ok(())
+            }
         }
     }
 
@@ -147,6 +159,10 @@ impl Message {
             network.states().set_next_state(message.id())?;
 
             message.action(addr, &network, expected).await?;
+
+            if matches!(message.r#type, MessageType::Disconnect) {
+                break;
+            }
         }
 
         Ok(())

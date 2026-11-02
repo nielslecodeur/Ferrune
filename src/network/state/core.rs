@@ -21,6 +21,11 @@ pub(crate) enum State {
 
     AskingBlocks,
     WaitingForBlocks,
+
+    Pinging,
+    WaitingForPong,
+
+    Disconnecting,
 }
 
 impl State {
@@ -34,13 +39,16 @@ impl State {
             State::SendingTransaction => Some(State::WaitingForTransactionConfirmation),
             State::AskingHeight => Some(State::WaitingForHeight),
             State::AskingBlocks => Some(State::WaitingForBlocks),
+            State::Pinging => Some(State::WaitingForPong),
             State::None
             | State::WaitingForConfirmation
             | State::WaitingForPeerAddress
             | State::WaitingForBlockConfirmation
             | State::WaitingForTransactionConfirmation
             | State::WaitingForHeight
-            | State::WaitingForBlocks => None,
+            | State::WaitingForBlocks
+            | State::WaitingForPong
+            | State::Disconnecting => None,
         }
     }
 
@@ -51,7 +59,9 @@ impl State {
             | State::SendingBlock
             | State::SendingTransaction
             | State::AskingHeight
-            | State::AskingBlocks => true,
+            | State::AskingBlocks
+            | State::Pinging
+            | State::Disconnecting => true,
             State::None
             | State::WaitingForChainId
             | State::WaitingForRegistration
@@ -60,7 +70,8 @@ impl State {
             | State::WaitingForBlockConfirmation
             | State::WaitingForTransactionConfirmation
             | State::WaitingForHeight
-            | State::WaitingForBlocks => false,
+            | State::WaitingForBlocks
+            | State::WaitingForPong => false,
         }
     }
 }

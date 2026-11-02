@@ -19,5 +19,8 @@ pub(crate) enum MessageType {
     Height(Option<u64>),
     AskBlocks { from: u64 },
     Blocks(Vec<Block>),
+    Ping,
+    Pong,
+    Disconnect,
     Ok,
 }
