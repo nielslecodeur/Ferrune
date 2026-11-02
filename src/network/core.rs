@@ -1,44 +1,37 @@
-use std::{net::SocketAddr, sync::Arc};
+use std::net::SocketAddr;
+use std::sync::Arc;
 
 use dashmap::DashMap;
 use rand::RngExt;
-use std::time::Duration;
+use tokio::io::AsyncWriteExt;
+use tokio::net::tcp::OwnedWriteHalf;
+use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::Mutex;
 use tokio::time::MissedTickBehavior;
-use tokio::{
-    io::AsyncWriteExt,
-    net::{TcpListener, TcpStream, tcp::OwnedWriteHalf},
-    sync::Mutex,
-};
 
-use crate::network::{
-    NetworkError,
-    message::{Message, MessageType},
-    state::StateHandler,
-};
+use crate::consts::{DISCOVERY_INTERVAL, MAX_PEERS};
+use crate::network::NetworkError;
+use crate::network::message::{Message, MessageType};
+use crate::network::state::StateHandler;
 
 type Writer = Arc<Mutex<OwnedWriteHalf>>;
 
-const MAX_PEERS: usize = 8;
-const DISCOVERY_INTERVAL: Duration = Duration::from_secs(60);
-
 pub struct Network {
-    // Address this node listens on, announced to peers in LetsConnect
     listen_addr: SocketAddr,
+    chain_id: u8,
 
     states: StateHandler,
 
-    // Keyed by socket address (ephemeral port for incoming connections)
     ongoing_connections: DashMap<SocketAddr, Writer>,
-    // Keyed by the peer's listening address
     connections: DashMap<SocketAddr, Writer>,
-    // Socket address -> listening address, for incoming connections
     peer_addrs: DashMap<SocketAddr, SocketAddr>,
 }
 
 impl Network {
-    pub fn new(listen_addr: SocketAddr) -> Self {
+    pub fn new(listen_addr: SocketAddr, chain_id: u8) -> Self {
         Self {
             listen_addr,
+            chain_id,
             states: StateHandler::default(),
             ongoing_connections: DashMap::new(),
             connections: DashMap::new(),
@@ -50,7 +43,10 @@ impl Network {
         self.listen_addr
     }
 
-    // Clones the writer so no DashMap lock is held across an await
+    pub fn chain_id(&self) -> u8 {
+        self.chain_id
+    }
+
     fn get_writer(&self, addr: SocketAddr) -> Result<Writer, NetworkError> {
         self.connections
             .get(&addr)
@@ -116,7 +112,6 @@ impl Network {
         }
     }
 
-    // Use this function to create a conversation with another peer
     pub async fn converse(
         &self,
         addr: SocketAddr,
@@ -129,7 +124,6 @@ impl Network {
         self.send(addr, &message).await
     }
 
-    // Use this function if the conversation has already started, and you got the id
     pub async fn send(&self, addr: SocketAddr, message: &Message) -> Result<(), NetworkError> {
         let mut json_message = serde_json::to_string(message)?;
         json_message.push('\n');
@@ -144,8 +138,6 @@ impl Network {
         Ok(())
     }
 
-    // socket_addr: address the connection was opened with (ephemeral port if incoming)
-    // listen_addr: address the peer listens on (announced in LetsConnect)
     pub(crate) fn register_connection(
         &self,
         socket_addr: SocketAddr,

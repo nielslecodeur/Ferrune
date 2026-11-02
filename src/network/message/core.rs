@@ -1,6 +1,7 @@
-use serde::{Deserialize, Serialize};
 use std::net::SocketAddr;
 use std::sync::Arc;
+
+use serde::{Deserialize, Serialize};
 use tokio::io::{AsyncBufReadExt, BufReader};
 use tokio::net::tcp::OwnedReadHalf;
 use uuid::Uuid;
@@ -42,7 +43,6 @@ impl Message {
         }
     }
 
-    // addr: socket address of the connection (ephemeral port if incoming)
     pub(crate) async fn action(
         &self,
         addr: SocketAddr,

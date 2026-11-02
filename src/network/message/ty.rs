@@ -6,7 +6,6 @@ use serde::{Deserialize, Serialize};
 pub enum MessageType {
     LetsConnect,
     ChainId(u8),
-    // Listening address of the peer initiating the connection
     Register(SocketAddr),
     AskPerrAddr,
     PeerAddress(SocketAddr),
