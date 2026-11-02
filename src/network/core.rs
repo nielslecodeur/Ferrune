@@ -1,15 +1,13 @@
-use std::{
-    net::SocketAddr,
-    sync::{
-        Arc,
-        atomic::{AtomicUsize, Ordering},
-    },
-};
+use std::{net::SocketAddr, sync::Arc};
 
-use dashmap::{DashMap, mapref::one::RefMut};
+use dashmap::DashMap;
+use rand::RngExt;
+use std::time::Duration;
+use tokio::time::MissedTickBehavior;
 use tokio::{
     io::AsyncWriteExt,
     net::{TcpListener, TcpStream, tcp::OwnedWriteHalf},
+    sync::Mutex,
 };
 
 use crate::network::{
@@ -18,70 +16,104 @@ use crate::network::{
     state::StateHandler,
 };
 
-#[derive(Default)]
+type Writer = Arc<Mutex<OwnedWriteHalf>>;
+
+const MAX_PEERS: usize = 8;
+const DISCOVERY_INTERVAL: Duration = Duration::from_secs(60);
+
 pub struct Network {
+    // Address this node listens on, announced to peers in LetsConnect
+    listen_addr: SocketAddr,
+
     states: StateHandler,
 
-    ongoing_connections: DashMap<SocketAddr, OwnedWriteHalf>,
-    connections: DashMap<SocketAddr, OwnedWriteHalf>,
-
-    connections_number: AtomicUsize,
+    // Keyed by socket address (ephemeral port for incoming connections)
+    ongoing_connections: DashMap<SocketAddr, Writer>,
+    // Keyed by the peer's listening address
+    connections: DashMap<SocketAddr, Writer>,
+    // Socket address -> listening address, for incoming connections
+    peer_addrs: DashMap<SocketAddr, SocketAddr>,
 }
 
 impl Network {
-    fn get_writer(
-        &self,
-        addr: SocketAddr,
-    ) -> Result<RefMut<'_, SocketAddr, OwnedWriteHalf>, NetworkError> {
+    pub fn new(listen_addr: SocketAddr) -> Self {
+        Self {
+            listen_addr,
+            states: StateHandler::default(),
+            ongoing_connections: DashMap::new(),
+            connections: DashMap::new(),
+            peer_addrs: DashMap::new(),
+        }
+    }
+
+    pub fn listen_addr(&self) -> SocketAddr {
+        self.listen_addr
+    }
+
+    // Clones the writer so no DashMap lock is held across an await
+    fn get_writer(&self, addr: SocketAddr) -> Result<Writer, NetworkError> {
         self.connections
-            .get_mut(&addr)
-            .or_else(|| self.ongoing_connections.get_mut(&addr))
+            .get(&addr)
+            .or_else(|| self.ongoing_connections.get(&addr))
+            .map(|entry| entry.value().clone())
             .ok_or(NetworkError::TcpStreamNotConnected(addr))
     }
 
-    pub async fn listen(self: Arc<Self>, addr: SocketAddr) -> Result<(), NetworkError> {
-        let listener = TcpListener::bind(addr).await?;
+    pub async fn listen(self: Arc<Self>) -> Result<(), NetworkError> {
+        let listener = TcpListener::bind(self.listen_addr).await?;
 
         loop {
             let (stream, peer_addr) = listener.accept().await?;
-            let (reader, writer) = stream.into_split();
-            self.ongoing_connections.insert(peer_addr, writer);
-
-            let network = self.clone();
-
-            tokio::spawn(async move {
-                let result = Message::handle(reader, peer_addr, network.clone()).await;
-
-                network.ongoing_connections.remove(&peer_addr);
-                network.connections.remove(&peer_addr);
-
-                if let Err(error) = result {
-                    todo!("Handle connection error: {error}");
-                }
-            });
+            self.clone().spawn_connection(stream, peer_addr);
         }
     }
 
     pub async fn connect_to(self: Arc<Self>, addr: SocketAddr) -> Result<(), NetworkError> {
+        if addr == self.listen_addr || self.is_connected(&addr) {
+            return Ok(());
+        }
+
         let stream = TcpStream::connect(addr).await?;
+        self.clone().spawn_connection(stream, addr);
+
+        self.converse(addr, MessageType::LetsConnect).await
+    }
+
+    fn spawn_connection(self: Arc<Self>, stream: TcpStream, socket_addr: SocketAddr) {
         let (reader, writer) = stream.into_split();
+        self.ongoing_connections
+            .insert(socket_addr, Arc::new(Mutex::new(writer)));
 
-        self.ongoing_connections.insert(addr, writer);
-
-        let network = self.clone();
         tokio::spawn(async move {
-            let result = Message::handle(reader, addr, network.clone()).await;
+            let result = Message::handle(reader, socket_addr, self.clone()).await;
 
-            network.ongoing_connections.remove(&addr);
-            network.connections.remove(&addr);
-            network.decrement_connections();
+            self.unregister_connection(socket_addr);
 
             if let Err(error) = result {
                 todo!("Handle connection error: {error}");
             }
         });
+    }
 
-        self.converse(addr, MessageType::LetsConnect).await
+    pub async fn discover_peers(self: Arc<Self>) {
+        let mut interval = tokio::time::interval(DISCOVERY_INTERVAL);
+        interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+        loop {
+            interval.tick().await;
+
+            if self.get_connections_number() >= MAX_PEERS {
+                continue;
+            }
+
+            let Some(peer) = self.get_random_connection() else {
+                continue;
+            };
+
+            if let Err(error) = self.converse(peer, MessageType::AskPerrAddr).await {
+                eprintln!("Failed to ask {peer} for a peer address: {error}");
+            }
+        }
     }
 
     // Use this function to create a conversation with another peer
@@ -102,39 +134,67 @@ impl Network {
         let mut json_message = serde_json::to_string(message)?;
         json_message.push('\n');
 
-        self.get_writer(addr)?
+        let writer = self.get_writer(addr)?;
+        writer
+            .lock()
+            .await
             .write_all(json_message.as_bytes())
             .await?;
 
         Ok(())
     }
 
-    pub(crate) fn register_connection(&self, addr: SocketAddr) -> Result<(), NetworkError> {
+    // socket_addr: address the connection was opened with (ephemeral port if incoming)
+    // listen_addr: address the peer listens on (announced in LetsConnect)
+    pub(crate) fn register_connection(
+        &self,
+        socket_addr: SocketAddr,
+        listen_addr: SocketAddr,
+    ) -> Result<(), NetworkError> {
         let (_, writer) = self
             .ongoing_connections
-            .remove(&addr)
-            .ok_or(NetworkError::TcpStreamNotConnected(addr))?;
+            .remove(&socket_addr)
+            .ok_or(NetworkError::TcpStreamNotConnected(socket_addr))?;
 
-        self.connections.insert(addr, writer);
-        self.increment_connections();
+        if socket_addr != listen_addr {
+            self.peer_addrs.insert(socket_addr, listen_addr);
+        }
+        self.connections.insert(listen_addr, writer);
 
         Ok(())
+    }
+
+    fn unregister_connection(&self, socket_addr: SocketAddr) {
+        self.ongoing_connections.remove(&socket_addr);
+
+        let listen_addr = self
+            .peer_addrs
+            .remove(&socket_addr)
+            .map(|(_, addr)| addr)
+            .unwrap_or(socket_addr);
+
+        self.connections.remove(&listen_addr);
     }
 
     pub(crate) fn states(&self) -> &StateHandler {
         &self.states
     }
 
-    pub(crate) fn increment_connections(&self) {
-        self.connections_number.fetch_add(1, Ordering::Relaxed);
-    }
-
-    pub(crate) fn decrement_connections(&self) {
-        self.connections_number.fetch_sub(1, Ordering::Relaxed);
-    }
-
-    #[allow(unused)]
     pub(crate) fn get_connections_number(&self) -> usize {
-        self.connections_number.load(Ordering::Relaxed)
+        self.connections.len()
+    }
+
+    pub(crate) fn get_random_connection(&self) -> Option<SocketAddr> {
+        let len = self.connections.len();
+        if len == 0 {
+            return None;
+        }
+
+        let index = rand::rng().random_range(0..len);
+        self.connections.iter().nth(index).map(|entry| *entry.key())
+    }
+
+    pub(crate) fn is_connected(&self, addr: &SocketAddr) -> bool {
+        self.connections.contains_key(addr)
     }
 }

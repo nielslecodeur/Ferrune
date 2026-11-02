@@ -36,14 +36,17 @@ impl Message {
         match &self.r#type {
             MessageType::LetsConnect => State::StartingConnection,
             MessageType::ChainId(_) => State::WaitingForChainId,
-            MessageType::Register => State::WaitingForRegistration,
+            MessageType::Register(_) => State::WaitingForRegistration,
+            MessageType::AskPerrAddr => State::WaitingForPeerAddress,
+            MessageType::PeerAddress(_) | MessageType::NoPeerFound => State::None,
         }
     }
 
+    // addr: socket address of the connection (ephemeral port if incoming)
     pub(crate) async fn action(
         &self,
         addr: SocketAddr,
-        network: &Network,
+        network: &Arc<Network>,
     ) -> Result<(), NetworkError> {
         match &self.r#type {
             MessageType::LetsConnect => {
@@ -52,7 +55,16 @@ impl Message {
             MessageType::ChainId(chain_id) => {
                 actions::connection::verify_chain_id(self.id, *chain_id, addr, network).await
             }
-            MessageType::Register => actions::connection::register(addr, network),
+            MessageType::Register(listen_addr) => {
+                actions::connection::register(addr, *listen_addr, network)
+            }
+            MessageType::AskPerrAddr => {
+                actions::connection::send_peer_addr(self.id, addr, network).await
+            }
+            MessageType::PeerAddress(peer_addr) => {
+                actions::connection::add_connection(*peer_addr, network.clone()).await
+            }
+            MessageType::NoPeerFound => Ok(()),
         }
     }
 
