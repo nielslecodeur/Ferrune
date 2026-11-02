@@ -8,6 +8,7 @@ use tracing_subscriber::EnvFilter;
 use crate::consts::{DEFAULT_BOOTSTRAP, MAIN_CHAIN_ID};
 use crate::network::Network;
 
+mod blockchain;
 mod consts;
 mod network;
 mod node;
