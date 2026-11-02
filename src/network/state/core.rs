@@ -9,6 +9,9 @@ pub(crate) enum State {
 
     AskingPeerAddress,
     WaitingForPeerAddress,
+
+    SendingBlock,
+    WaitingForBlockConfirmation,
 }
 
 impl State {
@@ -18,18 +21,23 @@ impl State {
             State::WaitingForChainId => Some(State::WaitingForRegistration),
             State::WaitingForRegistration => Some(State::WaitingForConfirmation),
             State::AskingPeerAddress => Some(State::WaitingForPeerAddress),
-            State::None | State::WaitingForConfirmation | State::WaitingForPeerAddress => None,
+            State::SendingBlock => Some(State::WaitingForBlockConfirmation),
+            State::None
+            | State::WaitingForConfirmation
+            | State::WaitingForPeerAddress
+            | State::WaitingForBlockConfirmation => None,
         }
     }
 
     pub(in crate::network) fn is_conversation_start(&self) -> bool {
         match self {
-            State::StartingConnection | State::AskingPeerAddress => true,
+            State::StartingConnection | State::AskingPeerAddress | State::SendingBlock => true,
             State::None
             | State::WaitingForChainId
             | State::WaitingForRegistration
             | State::WaitingForConfirmation
-            | State::WaitingForPeerAddress => false,
+            | State::WaitingForPeerAddress
+            | State::WaitingForBlockConfirmation => false,
         }
     }
 }

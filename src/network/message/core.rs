@@ -36,10 +36,26 @@ impl Message {
             MessageType::AskPeerAddr => State::AskingPeerAddress,
             MessageType::PeerAddress(_) | MessageType::NoPeerFound => State::WaitingForPeerAddress,
             MessageType::Ok => State::WaitingForConfirmation,
+            MessageType::SendBlock(_) => State::SendingBlock,
         }
     }
 
-    async fn action(&self, addr: SocketAddr, network: &Arc<Network>) -> Result<(), NetworkError> {
+    fn is_expected(&self, expected: State) -> bool {
+        match &self.r#type {
+            MessageType::Ok => matches!(
+                expected,
+                State::WaitingForConfirmation | State::WaitingForBlockConfirmation
+            ),
+            _ => self.state() == expected,
+        }
+    }
+
+    async fn action(
+        &self,
+        addr: SocketAddr,
+        network: &Arc<Network>,
+        expected: State,
+    ) -> Result<(), NetworkError> {
         match &self.r#type {
             MessageType::LetsConnect(chain_id) => {
                 actions::connection::send_chain_id(self.id, *chain_id, addr, network).await
@@ -58,7 +74,16 @@ impl Message {
                 Ok(())
             }
             MessageType::NoPeerFound => Ok(()),
-            MessageType::Ok => actions::connection::confirm_registration(addr, network),
+            MessageType::Ok => match expected {
+                State::WaitingForBlockConfirmation => {
+                    actions::block::confirm_block(addr, network);
+                    Ok(())
+                }
+                _ => actions::connection::confirm_registration(addr, network),
+            },
+            MessageType::SendBlock(block) => {
+                actions::block::receive_block(self.id, block, addr, network).await
+            }
         }
     }
 
@@ -87,7 +112,7 @@ impl Message {
                 .get_state(message.id())
                 .ok_or(StateError::ConversationNotStarted(message.id()))?;
 
-            if expected != message.state() {
+            if !message.is_expected(expected) {
                 return Err(StateError::UnexpectedState {
                     id: message.id(),
                     expected,
@@ -98,7 +123,7 @@ impl Message {
 
             network.states().set_next_state(message.id())?;
 
-            message.action(addr, &network).await?;
+            message.action(addr, &network, expected).await?;
         }
 
         Ok(())

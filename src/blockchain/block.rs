@@ -1,6 +1,8 @@
+use serde::{Deserialize, Serialize};
+
 use crate::blockchain::transaction::{Address, Transaction};
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Block {
     pub height: u64,
     pub previous_hash: [u8; 32],

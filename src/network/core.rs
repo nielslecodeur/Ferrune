@@ -10,6 +10,7 @@ use tokio::sync::Mutex;
 use tokio::time::MissedTickBehavior;
 use tracing::{info, warn};
 
+use crate::blockchain::block::Block;
 use crate::consts::{CONNECT_TIMEOUT, DISCOVERY_INTERVAL, MAX_PEERS};
 use crate::network::NetworkError;
 use crate::network::message::{Message, MessageType};
@@ -148,6 +149,24 @@ impl Network {
 
             if let Err(error) = self.converse(peer, MessageType::AskPeerAddr).await {
                 warn!(%peer, %error, "Failed to ask for a peer address");
+            }
+        }
+    }
+
+    pub(crate) async fn send_block(
+        &self,
+        addr: SocketAddr,
+        block: Block,
+    ) -> Result<(), NetworkError> {
+        self.converse(addr, MessageType::SendBlock(block)).await
+    }
+
+    pub(crate) async fn broadcast_block(&self, block: &Block) {
+        let peers: Vec<SocketAddr> = self.connections.iter().map(|entry| *entry.key()).collect();
+
+        for peer in peers {
+            if let Err(error) = self.send_block(peer, block.clone()).await {
+                warn!(%peer, %error, "Failed to send block");
             }
         }
     }
