@@ -1,7 +1,7 @@
 use thiserror::Error;
 use uuid::Uuid;
 
-use crate::State;
+use super::State;
 
 #[derive(Debug, Error)]
 pub enum StateError {

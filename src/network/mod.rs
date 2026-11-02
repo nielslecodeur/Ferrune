@@ -6,4 +6,4 @@ pub(crate) mod state;
 pub use core::Network;
 
 pub use error::NetworkError;
-pub use state::State;
+pub use state::{State, StateError};

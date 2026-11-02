@@ -7,8 +7,7 @@ use tokio::net::tcp::OwnedReadHalf;
 use uuid::Uuid;
 
 use super::MessageType;
-use crate::StateError;
-use crate::network::{Network, NetworkError, State};
+use crate::network::{Network, NetworkError, State, StateError};
 use crate::node::actions;
 
 #[derive(Debug, Serialize, Deserialize)]
@@ -23,10 +22,6 @@ impl Message {
             id: id.unwrap_or(Uuid::new_v4()),
             r#type,
         }
-    }
-
-    pub fn with_id(id: Uuid, r#type: MessageType) -> Self {
-        Self { id, r#type }
     }
 
     pub fn id(&self) -> Uuid {
