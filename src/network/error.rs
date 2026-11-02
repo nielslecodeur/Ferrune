@@ -31,6 +31,9 @@ pub(crate) enum NetworkError {
     #[error("Invalid block received")]
     InvalidBlock,
 
+    #[error("Invalid transaction received")]
+    InvalidTransaction,
+
     #[error("The chain is different")]
     DifferentChain,
 }

@@ -12,6 +12,9 @@ pub(crate) enum State {
 
     SendingBlock,
     WaitingForBlockConfirmation,
+
+    SendingTransaction,
+    WaitingForTransactionConfirmation,
 }
 
 impl State {
@@ -22,22 +25,28 @@ impl State {
             State::WaitingForRegistration => Some(State::WaitingForConfirmation),
             State::AskingPeerAddress => Some(State::WaitingForPeerAddress),
             State::SendingBlock => Some(State::WaitingForBlockConfirmation),
+            State::SendingTransaction => Some(State::WaitingForTransactionConfirmation),
             State::None
             | State::WaitingForConfirmation
             | State::WaitingForPeerAddress
-            | State::WaitingForBlockConfirmation => None,
+            | State::WaitingForBlockConfirmation
+            | State::WaitingForTransactionConfirmation => None,
         }
     }
 
     pub(in crate::network) fn is_conversation_start(&self) -> bool {
         match self {
-            State::StartingConnection | State::AskingPeerAddress | State::SendingBlock => true,
+            State::StartingConnection
+            | State::AskingPeerAddress
+            | State::SendingBlock
+            | State::SendingTransaction => true,
             State::None
             | State::WaitingForChainId
             | State::WaitingForRegistration
             | State::WaitingForConfirmation
             | State::WaitingForPeerAddress
-            | State::WaitingForBlockConfirmation => false,
+            | State::WaitingForBlockConfirmation
+            | State::WaitingForTransactionConfirmation => false,
         }
     }
 }

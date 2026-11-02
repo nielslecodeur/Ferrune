@@ -37,6 +37,7 @@ impl Message {
             MessageType::PeerAddress(_) | MessageType::NoPeerFound => State::WaitingForPeerAddress,
             MessageType::Ok => State::WaitingForConfirmation,
             MessageType::SendBlock(_) => State::SendingBlock,
+            MessageType::SendTransaction(_) => State::SendingTransaction,
         }
     }
 
@@ -44,7 +45,9 @@ impl Message {
         match &self.r#type {
             MessageType::Ok => matches!(
                 expected,
-                State::WaitingForConfirmation | State::WaitingForBlockConfirmation
+                State::WaitingForConfirmation
+                    | State::WaitingForBlockConfirmation
+                    | State::WaitingForTransactionConfirmation
             ),
             _ => self.state() == expected,
         }
@@ -79,10 +82,17 @@ impl Message {
                     actions::block::confirm_block(addr, network);
                     Ok(())
                 }
+                State::WaitingForTransactionConfirmation => {
+                    actions::transaction::confirm_transaction(addr, network);
+                    Ok(())
+                }
                 _ => actions::connection::confirm_registration(addr, network),
             },
             MessageType::SendBlock(block) => {
                 actions::block::receive_block(self.id, block, addr, network).await
+            }
+            MessageType::SendTransaction(transaction) => {
+                actions::transaction::receive_transaction(self.id, transaction, addr, network).await
             }
         }
     }

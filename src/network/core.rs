@@ -11,6 +11,7 @@ use tokio::time::MissedTickBehavior;
 use tracing::{info, warn};
 
 use crate::blockchain::block::Block;
+use crate::blockchain::transaction::Transaction;
 use crate::consts::{CONNECT_TIMEOUT, DISCOVERY_INTERVAL, MAX_PEERS};
 use crate::network::NetworkError;
 use crate::network::message::{Message, MessageType};
@@ -167,6 +168,25 @@ impl Network {
         for peer in peers {
             if let Err(error) = self.send_block(peer, block.clone()).await {
                 warn!(%peer, %error, "Failed to send block");
+            }
+        }
+    }
+
+    pub(crate) async fn send_transaction(
+        &self,
+        addr: SocketAddr,
+        transaction: Transaction,
+    ) -> Result<(), NetworkError> {
+        self.converse(addr, MessageType::SendTransaction(transaction))
+            .await
+    }
+
+    pub(crate) async fn broadcast_transaction(&self, transaction: &Transaction) {
+        let peers: Vec<SocketAddr> = self.connections.iter().map(|entry| *entry.key()).collect();
+
+        for peer in peers {
+            if let Err(error) = self.send_transaction(peer, transaction.clone()).await {
+                warn!(%peer, %error, "Failed to send transaction");
             }
         }
     }

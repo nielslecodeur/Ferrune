@@ -3,6 +3,7 @@ use std::net::SocketAddr;
 use serde::{Deserialize, Serialize};
 
 use crate::blockchain::block::Block;
+use crate::blockchain::transaction::Transaction;
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) enum MessageType {
@@ -13,5 +14,6 @@ pub(crate) enum MessageType {
     PeerAddress(SocketAddr),
     NoPeerFound,
     SendBlock(Block),
+    SendTransaction(Transaction),
     Ok,
 }
