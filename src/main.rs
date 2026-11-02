@@ -2,6 +2,8 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use clap::Parser;
+use tracing::{error, info};
+use tracing_subscriber::EnvFilter;
 
 use crate::consts::{DEFAULT_BOOTSTRAP, MAIN_CHAIN_ID};
 use crate::network::Network;
@@ -40,6 +42,12 @@ impl Args {
 
 #[tokio::main]
 async fn main() {
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info")),
+        )
+        .init();
+
     let args = Args::parse();
     let network = Arc::new(Network::new(args.listen, args.chain_id));
 
@@ -50,7 +58,7 @@ async fn main() {
 
         tokio::spawn(async move {
             if let Err(error) = network.connect_to(peer).await {
-                eprintln!("Failed to connect to bootstrap peer {peer}: {error}");
+                error!(%peer, %error, "Failed to connect to bootstrap peer");
             }
         });
     }
@@ -60,9 +68,9 @@ async fn main() {
     tokio::select! {
         result = listener => match result {
             Ok(Ok(())) => {}
-            Ok(Err(error)) => eprintln!("Listener stopped: {error}"),
-            Err(error) => eprintln!("Listener task panicked: {error}"),
+            Ok(Err(error)) => error!(%error, "Listener stopped"),
+            Err(error) => error!(%error, "Listener task panicked"),
         },
-        _ = tokio::signal::ctrl_c() => println!("Shutting down"),
+        _ = tokio::signal::ctrl_c() => info!("Shutting down"),
     }
 }

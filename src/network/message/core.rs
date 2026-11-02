@@ -11,34 +11,34 @@ use crate::network::{Network, NetworkError, State, StateError};
 use crate::node::actions;
 
 #[derive(Debug, Serialize, Deserialize)]
-pub struct Message {
+pub(crate) struct Message {
     id: Uuid,
     r#type: MessageType,
 }
 
 impl Message {
-    pub fn new(r#type: MessageType, id: Option<Uuid>) -> Self {
+    pub(crate) fn new(r#type: MessageType, id: Option<Uuid>) -> Self {
         Self {
             id: id.unwrap_or(Uuid::new_v4()),
             r#type,
         }
     }
 
-    pub fn id(&self) -> Uuid {
+    pub(in crate::network) fn id(&self) -> Uuid {
         self.id
     }
 
-    pub fn state(&self) -> State {
+    pub(in crate::network) fn state(&self) -> State {
         match &self.r#type {
             MessageType::LetsConnect => State::StartingConnection,
             MessageType::ChainId(_) => State::WaitingForChainId,
             MessageType::Register(_) => State::WaitingForRegistration,
-            MessageType::AskPerrAddr => State::WaitingForPeerAddress,
-            MessageType::PeerAddress(_) | MessageType::NoPeerFound => State::None,
+            MessageType::AskPerrAddr => State::AskingPeerAddress,
+            MessageType::PeerAddress(_) | MessageType::NoPeerFound => State::WaitingForPeerAddress,
         }
     }
 
-    pub(crate) async fn action(
+    async fn action(
         &self,
         addr: SocketAddr,
         network: &Arc<Network>,
@@ -63,7 +63,7 @@ impl Message {
         }
     }
 
-    pub(crate) async fn handle(
+    pub(in crate::network) async fn handle(
         reader: OwnedReadHalf,
         addr: SocketAddr,
         network: Arc<Network>,
@@ -93,9 +93,9 @@ impl Message {
                 .into());
             }
 
-            message.action(addr, &network).await?;
-
             network.states().set_next_state(message.id())?;
+
+            message.action(addr, &network).await?;
         }
 
         Ok(())

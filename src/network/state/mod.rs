@@ -3,8 +3,8 @@ mod error;
 mod handler;
 mod ttl;
 
-pub use core::State;
+pub(super) use core::State;
 
-pub use error::StateError;
-pub(crate) use handler::StateHandler;
+pub(super) use error::StateError;
+pub(super) use handler::StateHandler;
 use ttl::Statettl;

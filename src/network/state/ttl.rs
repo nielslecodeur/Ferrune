@@ -1,5 +1,6 @@
 use std::time::{SystemTime, UNIX_EPOCH};
 
+use crate::consts::CONVERSATION_TTL;
 use crate::network::state::State;
 
 pub(super) struct Statettl {
@@ -15,7 +16,7 @@ impl Statettl {
         }
     }
 
-    pub(super) fn now() -> u64 {
+    fn now() -> u64 {
         SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap()
@@ -23,7 +24,7 @@ impl Statettl {
     }
 
     pub(super) fn is_still_valid(&self) -> bool {
-        Self::now() > self.timestamp + 60_000
+        Self::now() <= self.timestamp + CONVERSATION_TTL.as_millis() as u64
     }
 
     pub(super) fn update(&mut self) -> Option<State> {

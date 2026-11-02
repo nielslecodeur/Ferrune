@@ -7,7 +7,7 @@ use uuid::Uuid;
 
 use super::{State, StateError, Statettl};
 
-pub(crate) struct StateHandler {
+pub(in crate::network) struct StateHandler {
     map: Arc<DashMap<Uuid, Statettl>>,
 }
 
@@ -32,11 +32,11 @@ impl Default for StateHandler {
 }
 
 impl StateHandler {
-    pub(crate) fn get_state(&self, id: Uuid) -> Option<State> {
+    pub(in crate::network) fn get_state(&self, id: Uuid) -> Option<State> {
         self.map.get(&id).map(|entry| entry.state())
     }
 
-    pub(crate) fn register_state(&self, id: Uuid, state: State) -> Result<(), StateError> {
+    pub(in crate::network) fn register_state(&self, id: Uuid, state: State) -> Result<(), StateError> {
         if state == State::None {
             return Ok(());
         }
@@ -50,7 +50,7 @@ impl StateHandler {
         }
     }
 
-    pub(crate) fn set_next_state(&self, id: Uuid) -> Result<(), StateError> {
+    pub(in crate::network) fn set_next_state(&self, id: Uuid) -> Result<(), StateError> {
         match self.map.entry(id) {
             Entry::Occupied(mut entry) => {
                 if entry.get_mut().update().is_none() {

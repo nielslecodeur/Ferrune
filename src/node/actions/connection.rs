@@ -12,7 +12,7 @@ pub(crate) async fn send_chain_id(
     network: &Network,
 ) -> Result<(), NetworkError> {
     let message = Message::new(MessageType::ChainId(network.chain_id()), Some(id));
-    network.send(addr, &message).await
+    network.reply(addr, &message).await
 }
 
 pub(crate) async fn verify_chain_id(
@@ -26,7 +26,7 @@ pub(crate) async fn verify_chain_id(
     }
 
     let message = Message::new(MessageType::Register(network.listen_addr()), Some(id));
-    network.send(addr, &message).await?;
+    network.reply(addr, &message).await?;
 
     register(addr, addr, network)
 }
@@ -45,12 +45,12 @@ pub(crate) async fn send_peer_addr(
     network: &Network,
 ) -> Result<(), NetworkError> {
     let message_type = match network.get_random_connection() {
-        Some(peer) if peer != addr => MessageType::PeerAddress(peer),
+        Some(peer) if peer != network.peer_listen_addr(addr) => MessageType::PeerAddress(peer),
         _ => MessageType::NoPeerFound,
     };
 
     let message = Message::new(message_type, Some(id));
-    network.send(addr, &message).await
+    network.reply(addr, &message).await
 }
 
 pub(crate) async fn add_connection(

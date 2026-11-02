@@ -1,9 +1,9 @@
-pub(super) mod core;
+mod core;
 mod error;
-pub(super) mod message;
-pub(crate) mod state;
+pub(crate) mod message;
+mod state;
 
-pub use core::Network;
+pub(crate) use core::Network;
 
-pub use error::NetworkError;
-pub use state::{State, StateError};
+pub(crate) use error::NetworkError;
+use state::{State, StateError};

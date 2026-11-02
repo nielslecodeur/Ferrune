@@ -1,27 +1,32 @@
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub enum State {
+pub(crate) enum State {
     None,
 
     StartingConnection,
     WaitingForChainId,
     WaitingForRegistration,
 
+    AskingPeerAddress,
     WaitingForPeerAddress,
 }
 
 impl State {
-    pub(crate) fn next(&self) -> Option<Self> {
+    pub(super) fn next(&self) -> Option<Self> {
         match self {
             State::StartingConnection => Some(Self::WaitingForChainId),
             State::WaitingForChainId => Some(State::WaitingForRegistration),
+            State::AskingPeerAddress => Some(State::WaitingForPeerAddress),
             State::None | State::WaitingForRegistration | State::WaitingForPeerAddress => None,
         }
     }
 
-    pub(crate) fn is_conversation_start(&self) -> bool {
+    pub(in crate::network) fn is_conversation_start(&self) -> bool {
         match self {
-            State::StartingConnection | State::WaitingForPeerAddress => true,
-            State::None | State::WaitingForChainId | State::WaitingForRegistration => false,
+            State::StartingConnection | State::AskingPeerAddress => true,
+            State::None
+            | State::WaitingForChainId
+            | State::WaitingForRegistration
+            | State::WaitingForPeerAddress => false,
         }
     }
 }
