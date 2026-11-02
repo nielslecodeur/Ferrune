@@ -19,7 +19,7 @@ pub(crate) struct Message {
 impl Message {
     pub(crate) fn new(r#type: MessageType, id: Option<Uuid>) -> Self {
         Self {
-            id: id.unwrap_or(Uuid::new_v4()),
+            id: id.unwrap_or_else(Uuid::new_v4),
             r#type,
         }
     }
@@ -30,22 +30,18 @@ impl Message {
 
     pub(in crate::network) fn state(&self) -> State {
         match &self.r#type {
-            MessageType::LetsConnect => State::StartingConnection,
+            MessageType::LetsConnect(_) => State::StartingConnection,
             MessageType::ChainId(_) => State::WaitingForChainId,
             MessageType::Register(_) => State::WaitingForRegistration,
-            MessageType::AskPerrAddr => State::AskingPeerAddress,
+            MessageType::AskPeerAddr => State::AskingPeerAddress,
             MessageType::PeerAddress(_) | MessageType::NoPeerFound => State::WaitingForPeerAddress,
         }
     }
 
-    async fn action(
-        &self,
-        addr: SocketAddr,
-        network: &Arc<Network>,
-    ) -> Result<(), NetworkError> {
+    async fn action(&self, addr: SocketAddr, network: &Arc<Network>) -> Result<(), NetworkError> {
         match &self.r#type {
-            MessageType::LetsConnect => {
-                actions::connection::send_chain_id(self.id, addr, network).await
+            MessageType::LetsConnect(chain_id) => {
+                actions::connection::send_chain_id(self.id, *chain_id, addr, network).await
             }
             MessageType::ChainId(chain_id) => {
                 actions::connection::verify_chain_id(self.id, *chain_id, addr, network).await
@@ -53,16 +49,21 @@ impl Message {
             MessageType::Register(listen_addr) => {
                 actions::connection::register(addr, *listen_addr, network)
             }
-            MessageType::AskPerrAddr => {
+            MessageType::AskPeerAddr => {
                 actions::connection::send_peer_addr(self.id, addr, network).await
             }
             MessageType::PeerAddress(peer_addr) => {
-                actions::connection::add_connection(*peer_addr, network.clone()).await
+                actions::connection::add_connection(*peer_addr, network.clone());
+                Ok(())
             }
             MessageType::NoPeerFound => Ok(()),
         }
     }
 
+    /// Reads and processes messages from a peer until the stream closes.
+    ///
+    /// Any error (invalid JSON, protocol violation, different chain, ...) is
+    /// considered fatal for this peer: it is returned and the connection is closed.
     pub(in crate::network) async fn handle(
         reader: OwnedReadHalf,
         addr: SocketAddr,

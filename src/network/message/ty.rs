@@ -4,10 +4,10 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) enum MessageType {
-    LetsConnect,
+    LetsConnect(u8),
     ChainId(u8),
     Register(SocketAddr),
-    AskPerrAddr,
+    AskPeerAddr,
     PeerAddress(SocketAddr),
     NoPeerFound,
 }

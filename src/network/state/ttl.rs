@@ -1,41 +1,32 @@
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::Instant;
 
 use crate::consts::CONVERSATION_TTL;
 use crate::network::state::State;
 
-pub(super) struct Statettl {
-    timestamp: u64,
+pub(super) struct StateTtl {
+    last_update: Instant,
     state: State,
 }
 
-impl Statettl {
+impl StateTtl {
     pub(super) fn new(state: State) -> Self {
         Self {
-            timestamp: Self::now(),
+            last_update: Instant::now(),
             state,
         }
     }
 
-    fn now() -> u64 {
-        SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .unwrap()
-            .as_millis() as u64
-    }
-
     pub(super) fn is_still_valid(&self) -> bool {
-        Self::now() <= self.timestamp + CONVERSATION_TTL.as_millis() as u64
+        self.last_update.elapsed() <= CONVERSATION_TTL
     }
 
     pub(super) fn update(&mut self) -> Option<State> {
-        if let Some(n) = self.state.next() {
-            self.timestamp = Self::now();
-            self.state = n;
+        let next = self.state.next()?;
 
-            return Some(n);
-        }
+        self.last_update = Instant::now();
+        self.state = next;
 
-        None
+        Some(next)
     }
 
     pub(super) fn state(&self) -> State {

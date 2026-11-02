@@ -1,33 +1,36 @@
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::thread;
 
 use dashmap::{DashMap, Entry};
 use uuid::Uuid;
 
-use super::{State, StateError, Statettl};
+use super::{State, StateError, StateTtl};
+use crate::consts::STATE_CLEANUP_INTERVAL;
 
 pub(in crate::network) struct StateHandler {
-    map: Arc<DashMap<Uuid, Statettl>>,
+    map: Arc<DashMap<Uuid, StateTtl>>,
 }
 
 impl Default for StateHandler {
+    /// Must be called from within a Tokio runtime: it spawns a task that purges
+    /// expired conversations. The task stops once the handler is dropped.
     fn default() -> Self {
-        let running = Arc::new(AtomicBool::new(true));
-        let worker_running = Arc::clone(&running);
+        let map: Arc<DashMap<Uuid, StateTtl>> = Arc::new(DashMap::new());
+        let weak_map = Arc::downgrade(&map);
 
-        let states: Arc<DashMap<Uuid, Statettl>> = Arc::new(DashMap::new());
-        let worker_states = Arc::clone(&states);
+        tokio::spawn(async move {
+            let mut interval = tokio::time::interval(STATE_CLEANUP_INTERVAL);
 
-        let _ = thread::spawn(move || {
-            while worker_running.load(Ordering::Relaxed) {
-                worker_states.retain(|_, entry| entry.is_still_valid());
+            loop {
+                interval.tick().await;
 
-                thread::sleep(std::time::Duration::from_secs(1));
+                let Some(map) = weak_map.upgrade() else {
+                    break;
+                };
+                map.retain(|_, entry| entry.is_still_valid());
             }
         });
 
-        Self { map: states }
+        Self { map }
     }
 }
 
@@ -36,14 +39,18 @@ impl StateHandler {
         self.map.get(&id).map(|entry| entry.state())
     }
 
-    pub(in crate::network) fn register_state(&self, id: Uuid, state: State) -> Result<(), StateError> {
+    pub(in crate::network) fn register_state(
+        &self,
+        id: Uuid,
+        state: State,
+    ) -> Result<(), StateError> {
         if state == State::None {
             return Ok(());
         }
 
         match self.map.entry(id) {
             Entry::Vacant(entry) => {
-                entry.insert(Statettl::new(state));
+                entry.insert(StateTtl::new(state));
                 Ok(())
             }
             Entry::Occupied(_) => Err(StateError::Collision(id)),

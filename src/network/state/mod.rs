@@ -7,4 +7,4 @@ pub(super) use core::State;
 
 pub(super) use error::StateError;
 pub(super) use handler::StateHandler;
-use ttl::Statettl;
+use ttl::StateTtl;
