@@ -35,7 +35,7 @@ impl Message {
             MessageType::Register(_) => State::WaitingForRegistration,
             MessageType::AskPeerAddr => State::AskingPeerAddress,
             MessageType::PeerAddress(_) | MessageType::NoPeerFound => State::WaitingForPeerAddress,
-            MessageType::Ok => State::WaitingForConfirmation,
+            MessageType::Ok | MessageType::Reject(_) => State::WaitingForConfirmation,
             MessageType::SendBlock(_) => State::SendingBlock,
             MessageType::SendTransaction(_) => State::SendingTransaction,
             MessageType::AskHeight => State::AskingHeight,
@@ -55,6 +55,10 @@ impl Message {
                 State::WaitingForConfirmation
                     | State::WaitingForBlockConfirmation
                     | State::WaitingForTransactionConfirmation
+            ),
+            MessageType::Reject(_) => matches!(
+                expected,
+                State::WaitingForBlockConfirmation | State::WaitingForTransactionConfirmation
             ),
             _ => self.state() == expected,
         }
@@ -110,6 +114,15 @@ impl Message {
                 actions::sync::send_blocks(self.id, *from, addr, network).await
             }
             MessageType::Blocks(blocks) => actions::sync::receive_blocks(blocks, addr, network),
+            MessageType::Reject(reason) => {
+                match expected {
+                    State::WaitingForTransactionConfirmation => {
+                        actions::transaction::reject_transaction(reason, addr, network)
+                    }
+                    _ => actions::block::reject_block(reason, addr, network),
+                }
+                Ok(())
+            }
             MessageType::Ping => actions::health::send_pong(self.id, addr, network).await,
             MessageType::Pong => {
                 actions::health::receive_pong(addr, network);

@@ -23,4 +23,11 @@ pub(crate) enum MessageType {
     Pong,
     Disconnect,
     Ok,
+    Reject(RejectReason),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub(crate) enum RejectReason {
+    InvalidBlockHash,
+    InvalidTransaction,
 }
