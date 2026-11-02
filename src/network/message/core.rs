@@ -35,6 +35,7 @@ impl Message {
             MessageType::Register(_) => State::WaitingForRegistration,
             MessageType::AskPeerAddr => State::AskingPeerAddress,
             MessageType::PeerAddress(_) | MessageType::NoPeerFound => State::WaitingForPeerAddress,
+            MessageType::Ok => State::WaitingForConfirmation,
         }
     }
 
@@ -47,7 +48,7 @@ impl Message {
                 actions::connection::verify_chain_id(self.id, *chain_id, addr, network).await
             }
             MessageType::Register(listen_addr) => {
-                actions::connection::register(addr, *listen_addr, network)
+                actions::connection::register(self.id, addr, *listen_addr, network).await
             }
             MessageType::AskPeerAddr => {
                 actions::connection::send_peer_addr(self.id, addr, network).await
@@ -57,6 +58,7 @@ impl Message {
                 Ok(())
             }
             MessageType::NoPeerFound => Ok(()),
+            MessageType::Ok => actions::connection::confirm_registration(addr, network),
         }
     }
 

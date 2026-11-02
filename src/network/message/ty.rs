@@ -10,4 +10,5 @@ pub(crate) enum MessageType {
     AskPeerAddr,
     PeerAddress(SocketAddr),
     NoPeerFound,
+    Ok,
 }

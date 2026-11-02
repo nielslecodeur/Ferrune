@@ -5,6 +5,7 @@ pub(crate) enum State {
     StartingConnection,
     WaitingForChainId,
     WaitingForRegistration,
+    WaitingForConfirmation,
 
     AskingPeerAddress,
     WaitingForPeerAddress,
@@ -15,8 +16,9 @@ impl State {
         match self {
             State::StartingConnection => Some(Self::WaitingForChainId),
             State::WaitingForChainId => Some(State::WaitingForRegistration),
+            State::WaitingForRegistration => Some(State::WaitingForConfirmation),
             State::AskingPeerAddress => Some(State::WaitingForPeerAddress),
-            State::None | State::WaitingForRegistration | State::WaitingForPeerAddress => None,
+            State::None | State::WaitingForConfirmation | State::WaitingForPeerAddress => None,
         }
     }
 
@@ -26,6 +28,7 @@ impl State {
             State::None
             | State::WaitingForChainId
             | State::WaitingForRegistration
+            | State::WaitingForConfirmation
             | State::WaitingForPeerAddress => false,
         }
     }

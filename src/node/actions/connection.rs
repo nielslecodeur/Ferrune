@@ -22,7 +22,7 @@ pub(crate) async fn send_chain_id(
     network.reply(addr, &message).await
 }
 
-/// Called on the initiating side: checks the peer's chain, registers it, then sends our listen address.
+/// Called on the initiating side: checks the peer's chain, then sends our listen address.
 pub(crate) async fn verify_chain_id(
     id: Uuid,
     chain_id: u8,
@@ -33,18 +33,27 @@ pub(crate) async fn verify_chain_id(
         return Err(NetworkError::DifferentChain);
     }
 
-    register(addr, addr, network)?;
-
     let message = Message::new(MessageType::Register(network.listen_addr()), Some(id));
     network.reply(addr, &message).await
 }
 
-pub(crate) fn register(
+pub(crate) async fn register(
+    id: Uuid,
     addr: SocketAddr,
     listen_addr: SocketAddr,
     network: &Network,
 ) -> Result<(), NetworkError> {
-    network.register_connection(addr, listen_addr)
+    network.register_connection(addr, listen_addr)?;
+
+    let message = Message::new(MessageType::Ok, Some(id));
+    network.reply(addr, &message).await
+}
+
+pub(crate) fn confirm_registration(
+    addr: SocketAddr,
+    network: &Network,
+) -> Result<(), NetworkError> {
+    network.register_connection(addr, addr)
 }
 
 pub(crate) async fn send_peer_addr(
