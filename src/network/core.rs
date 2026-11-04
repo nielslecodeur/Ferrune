@@ -76,6 +76,16 @@ impl Network {
             .blocks_from(from, MAX_BLOCKS_PER_MESSAGE)
     }
 
+    /// Returns `false` if the transaction was already in the mempool.
+    pub(crate) fn add_transaction(&self, transaction: Transaction) -> Result<bool, NetworkError> {
+        Ok(self
+            .blockchain
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .mempool
+            .insert(transaction)?)
+    }
+
     pub(crate) fn peer_listen_addr(&self, socket_addr: SocketAddr) -> SocketAddr {
         self.peer_addrs
             .get(&socket_addr)
