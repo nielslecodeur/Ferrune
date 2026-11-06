@@ -4,6 +4,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::blockchain::block::Block;
+use crate::blockchain::core::BlockchainError;
 use crate::network::message::{Message, MessageType, RejectReason};
 use crate::network::{Network, NetworkError};
 
@@ -21,14 +22,31 @@ pub(crate) async fn receive_block(
         return network.reply(addr, &message).await;
     }
 
-    info!(
-        peer = %network.peer_listen_addr(addr),
-        height = block.height,
-        "Block received"
-    );
+    let peer = network.peer_listen_addr(addr);
 
-    let message = Message::new(MessageType::Ok, Some(id));
-    network.reply(addr, &message).await
+    match network.add_block(block.clone()) {
+        Ok(()) => {
+            info!(%peer, height = block.height, "Block added");
+
+            let message = Message::new(MessageType::Ok, Some(id));
+            network.reply(addr, &message).await
+        }
+        Err(error) => {
+            warn!(%peer, height = block.height, ?error, "Invalid block received");
+
+            let message = Message::new(MessageType::Reject(RejectReason::InvalidBlock), Some(id));
+            network.reply(addr, &message).await?;
+
+            // The peer is ahead of us: get the missing blocks.
+            if let BlockchainError::InvalidHeight { expected, received } = error
+                && received > expected
+            {
+                network.ask_blocks(addr, expected).await?;
+            }
+
+            Ok(())
+        }
+    }
 }
 
 pub(crate) fn confirm_block(addr: SocketAddr, network: &Network) {
