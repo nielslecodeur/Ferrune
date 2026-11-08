@@ -22,6 +22,10 @@ impl State {
         }
     }
 
+    pub fn mint_authority(&self) -> &Address {
+        &self.mint_authority
+    }
+
     pub fn balance(&self, address: &Address) -> u64 {
         self.accounts
             .get(address)

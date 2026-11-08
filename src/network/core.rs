@@ -11,7 +11,7 @@ use tokio::time::MissedTickBehavior;
 use tracing::{info, warn};
 
 use crate::blockchain::block::Block;
-use crate::blockchain::core::Blockchain;
+use crate::blockchain::core::{Blockchain, BlockchainError};
 use crate::blockchain::transaction::Transaction;
 use crate::consts::{CONNECT_TIMEOUT, DISCOVERY_INTERVAL, MAX_BLOCKS_PER_MESSAGE, MAX_PEERS};
 use crate::network::NetworkError;
@@ -74,6 +74,28 @@ impl Network {
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
             .blocks_from(from, MAX_BLOCKS_PER_MESSAGE)
+    }
+
+    /// Height of the next block we expect.
+    pub(crate) fn next_height(&self) -> u64 {
+        self.height().map_or(0, |height| height.saturating_add(1))
+    }
+
+    pub(crate) fn add_block(&self, block: Block) -> Result<(), BlockchainError> {
+        self.blockchain
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .add_block(block)
+    }
+
+    /// Returns `false` if the transaction was already in the mempool.
+    pub(crate) fn add_transaction(&self, transaction: Transaction) -> Result<bool, NetworkError> {
+        Ok(self
+            .blockchain
+            .write()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .mempool
+            .insert(transaction)?)
     }
 
     pub(crate) fn peer_listen_addr(&self, socket_addr: SocketAddr) -> SocketAddr {

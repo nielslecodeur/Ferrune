@@ -29,6 +29,7 @@ pub(crate) enum MessageType {
 #[derive(Debug, Serialize, Deserialize)]
 pub(crate) enum RejectReason {
     InvalidBlockHash,
+    InvalidBlock,
     InvalidTransaction,
     DifferentChain,
     AlreadyConnected,

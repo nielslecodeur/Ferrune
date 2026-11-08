@@ -1,4 +1,5 @@
 use super::block::Block;
+use super::mempool::Mempool;
 use super::state::State;
 use super::state::StateError;
 use super::transaction::{Address, Transaction};
@@ -7,6 +8,7 @@ use super::transaction::{Address, Transaction};
 pub struct Blockchain {
     pub blocks: Vec<Block>,
     pub state: State,
+    pub mempool: Mempool,
 }
 
 #[derive(Debug)]
@@ -24,6 +26,7 @@ impl Blockchain {
         Self {
             blocks: Vec::new(),
             state,
+            mempool: Mempool::default(),
         }
     }
 
@@ -104,9 +107,26 @@ impl Blockchain {
         // 4. Remplacer self.state par l'état temporaire.
         self.state = bis;
         // 5. Ajouter le bloc à self.blocks.
+        self.mempool.remove_included(&block.transactions);
         self.blocks.push(block);
 
         Ok(())
+    }
+
+    /// Applies a block received from the network.
+    ///
+    /// Transactions are not signed yet, so the signer is the declared sender.
+    pub fn add_block(&mut self, block: Block) -> Result<(), BlockchainError> {
+        let mint_authority = self.state.mint_authority().clone();
+
+        self.apply_finalized_block(block, |transaction| {
+            Ok(match transaction {
+                Transaction::Mint { .. } => mint_authority.clone(),
+                Transaction::Transfer { from, .. } | Transaction::Stake { from, .. } => {
+                    from.clone()
+                }
+            })
+        })
     }
 }
 
@@ -250,6 +270,16 @@ mod tests {
         ));
         assert_eq!(chain.state, before);
         assert!(chain.blocks.is_empty());
+    }
+
+    #[test]
+    fn added_block_clears_its_transactions_from_mempool() {
+        let mut chain = chain();
+        chain.mempool.insert(mint()).unwrap();
+        chain.mempool.insert(transfer(30)).unwrap();
+        chain.add_block(block(0, [0; 32], vec![mint()])).unwrap();
+        assert_eq!(chain.mempool.len(), 1);
+        assert_eq!(chain.state.balance(&address("alice")), 100);
     }
 
     #[test]

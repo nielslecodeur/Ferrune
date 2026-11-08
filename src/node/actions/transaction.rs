@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 use uuid::Uuid;
 
 use crate::blockchain::transaction::Transaction;
@@ -21,11 +21,13 @@ pub(crate) async fn receive_transaction(
         return network.reply(addr, &message).await;
     }
 
-    info!(
-        peer = %network.peer_listen_addr(addr),
-        ?transaction,
-        "Transaction received"
-    );
+    let peer = network.peer_listen_addr(addr);
+
+    if network.add_transaction(transaction.clone())? {
+        info!(%peer, ?transaction, "Transaction added to mempool");
+    } else {
+        debug!(%peer, ?transaction, "Transaction already known");
+    }
 
     let message = Message::new(MessageType::Ok, Some(id));
     network.reply(addr, &message).await

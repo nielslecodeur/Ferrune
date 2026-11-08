@@ -17,13 +17,24 @@ pub(crate) async fn send_height(
     network.reply(addr, &message).await
 }
 
-pub(crate) fn receive_height(height: Option<u64>, addr: SocketAddr, network: &Network) {
+pub(crate) async fn receive_height(
+    height: Option<u64>,
+    addr: SocketAddr,
+    network: &Network,
+) -> Result<(), NetworkError> {
     info!(
         peer = %network.peer_listen_addr(addr),
         ?height,
         local_height = ?network.height(),
         "Height received"
     );
+
+    let from = network.next_height();
+
+    match height {
+        Some(height) if height >= from => network.ask_blocks(addr, from).await,
+        _ => Ok(()),
+    }
 }
 
 pub(crate) async fn send_blocks(
@@ -36,7 +47,7 @@ pub(crate) async fn send_blocks(
     network.reply(addr, &message).await
 }
 
-pub(crate) fn receive_blocks(
+pub(crate) async fn receive_blocks(
     blocks: &[Block],
     addr: SocketAddr,
     network: &Network,
@@ -55,13 +66,29 @@ pub(crate) fn receive_blocks(
         }
     }
 
+    for block in blocks {
+        // Already received from another peer in the meantime.
+        if block.height < network.next_height() {
+            continue;
+        }
+
+        if let Err(error) = network.add_block(block.clone()) {
+            warn!(%peer, height = block.height, ?error, "Invalid block received, stopping sync");
+            return Ok(());
+        }
+    }
+
     info!(
         %peer,
         count = blocks.len(),
-        first = ?blocks.first().map(|block| block.height),
-        last = ?blocks.last().map(|block| block.height),
+        local_height = ?network.height(),
         "Blocks received"
     );
+
+    // A full batch means the peer may have more blocks.
+    if blocks.len() == MAX_BLOCKS_PER_MESSAGE {
+        network.ask_blocks(addr, network.next_height()).await?;
+    }
 
     Ok(())
 }

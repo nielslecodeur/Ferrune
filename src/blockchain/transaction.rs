@@ -39,6 +39,12 @@ impl Transaction {
 
         Ok(())
     }
+
+    pub fn hash(&self) -> Result<[u8; 32], serde_json::Error> {
+        use sha2::{Digest, Sha256};
+
+        Ok(Sha256::digest(serde_json::to_vec(self)?).into())
+    }
 }
 
 #[derive(Debug)]
