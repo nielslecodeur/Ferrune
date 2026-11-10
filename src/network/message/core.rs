@@ -101,7 +101,7 @@ impl Message {
                     actions::transaction::confirm_transaction(addr, network);
                     Ok(())
                 }
-                _ => actions::connection::confirm_registration(addr, network),
+                _ => actions::connection::confirm_registration(addr, network).await,
             },
             MessageType::SendBlock(block) => {
                 actions::block::receive_block(self.id, block, addr, network).await
