@@ -71,6 +71,7 @@ async fn main() {
     }
 
     tokio::spawn(network.clone().discover_peers());
+    tokio::spawn(network.clone().check_peers());
 
     tokio::select! {
         result = listener => match result {

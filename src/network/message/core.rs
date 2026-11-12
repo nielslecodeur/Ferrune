@@ -155,6 +155,7 @@ impl Message {
 
         while let Some(line) = lines.next_line().await? {
             let message: Self = serde_json::from_str(&line)?;
+            network.mark_seen(addr);
 
             if message.state().is_conversation_start() {
                 network
