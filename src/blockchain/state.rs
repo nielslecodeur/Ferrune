@@ -26,6 +26,13 @@ impl State {
         &self.mint_authority
     }
 
+    pub fn nonce(&self, address: &Address) -> u64 {
+        self.accounts
+            .get(address)
+            .map(|account| account.nonce)
+            .unwrap_or(0)
+    }
+
     pub fn balance(&self, address: &Address) -> u64 {
         self.accounts
             .get(address)

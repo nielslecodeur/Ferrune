@@ -101,8 +101,7 @@ impl Network {
             .blockchain
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .mempool
-            .insert(transaction)?)
+            .add_transaction(transaction)?)
     }
 
     pub(crate) fn peer_listen_addr(&self, socket_addr: SocketAddr) -> SocketAddr {
@@ -266,8 +265,14 @@ impl Network {
         self.converse(addr, MessageType::SendBlock(block)).await
     }
 
-    pub(crate) async fn broadcast_block(&self, block: &Block) {
-        let peers: Vec<SocketAddr> = self.connections.iter().map(|entry| *entry.key()).collect();
+    /// Sends to every peer except `exclude` (usually the peer we received it from).
+    pub(crate) async fn broadcast_block(&self, block: &Block, exclude: Option<SocketAddr>) {
+        let peers: Vec<SocketAddr> = self
+            .connections
+            .iter()
+            .map(|entry| *entry.key())
+            .filter(|peer| Some(*peer) != exclude)
+            .collect();
 
         for peer in peers {
             if let Err(error) = self.send_block(peer, block.clone()).await {
@@ -285,8 +290,18 @@ impl Network {
             .await
     }
 
-    pub(crate) async fn broadcast_transaction(&self, transaction: &Transaction) {
-        let peers: Vec<SocketAddr> = self.connections.iter().map(|entry| *entry.key()).collect();
+    /// Sends to every peer except `exclude` (usually the peer we received it from).
+    pub(crate) async fn broadcast_transaction(
+        &self,
+        transaction: &Transaction,
+        exclude: Option<SocketAddr>,
+    ) {
+        let peers: Vec<SocketAddr> = self
+            .connections
+            .iter()
+            .map(|entry| *entry.key())
+            .filter(|peer| Some(*peer) != exclude)
+            .collect();
 
         for peer in peers {
             if let Err(error) = self.send_transaction(peer, transaction.clone()).await {

@@ -25,9 +25,15 @@ pub(crate) async fn receive_transaction(
 
     if network.add_transaction(transaction.clone())? {
         info!(%peer, ?transaction, "Transaction added to mempool");
-    } else {
-        debug!(%peer, ?transaction, "Transaction already known");
+
+        let message = Message::new(MessageType::Ok, Some(id));
+        network.reply(addr, &message).await?;
+
+        network.broadcast_transaction(transaction, Some(peer)).await;
+        return Ok(());
     }
+
+    debug!(%peer, ?transaction, "Transaction already known");
 
     let message = Message::new(MessageType::Ok, Some(id));
     network.reply(addr, &message).await

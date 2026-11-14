@@ -24,12 +24,21 @@ pub(crate) async fn receive_block(
 
     let peer = network.peer_listen_addr(addr);
 
+    // Already received from another peer: nothing to do.
+    if block.height < network.next_height() {
+        let message = Message::new(MessageType::Ok, Some(id));
+        return network.reply(addr, &message).await;
+    }
+
     match network.add_block(block.clone()) {
         Ok(()) => {
             info!(%peer, height = block.height, "Block added");
 
             let message = Message::new(MessageType::Ok, Some(id));
-            network.reply(addr, &message).await
+            network.reply(addr, &message).await?;
+
+            network.broadcast_block(block, Some(peer)).await;
+            Ok(())
         }
         Err(error) => {
             warn!(%peer, height = block.height, ?error, "Invalid block received");

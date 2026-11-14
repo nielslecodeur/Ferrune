@@ -113,6 +113,21 @@ impl Blockchain {
         Ok(())
     }
 
+    /// Adds a transaction to the mempool, unless it is already known or
+    /// already applied. Returns `false` in those cases.
+    pub fn add_transaction(&mut self, transaction: Transaction) -> Result<bool, serde_json::Error> {
+        let sender = match &transaction {
+            Transaction::Mint { .. } => self.state.mint_authority(),
+            Transaction::Transfer { from, .. } | Transaction::Stake { from, .. } => from,
+        };
+
+        if transaction.nonce() < self.state.nonce(sender) {
+            return Ok(false);
+        }
+
+        self.mempool.insert(transaction)
+    }
+
     /// Applies a block received from the network.
     ///
     /// Transactions are not signed yet, so the signer is the declared sender.
@@ -280,6 +295,15 @@ mod tests {
         chain.add_block(block(0, [0; 32], vec![mint()])).unwrap();
         assert_eq!(chain.mempool.len(), 1);
         assert_eq!(chain.state.balance(&address("alice")), 100);
+    }
+
+    #[test]
+    fn ignores_already_applied_transactions() {
+        let mut chain = chain();
+        chain.add_block(block(0, [0; 32], vec![mint()])).unwrap();
+        assert!(!chain.add_transaction(mint()).unwrap());
+        assert!(chain.add_transaction(transfer(10)).unwrap());
+        assert!(!chain.add_transaction(transfer(10)).unwrap());
     }
 
     #[test]
