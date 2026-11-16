@@ -29,6 +29,10 @@ impl Mempool {
         }
     }
 
+    pub fn iter(&self) -> impl Iterator<Item = &Transaction> {
+        self.transactions.values()
+    }
+
     pub fn len(&self) -> usize {
         self.transactions.len()
     }

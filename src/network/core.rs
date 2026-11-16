@@ -104,6 +104,35 @@ impl Network {
             .add_transaction(transaction)?)
     }
 
+    pub(crate) fn mempool_len(&self) -> usize {
+        self.blockchain
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .mempool
+            .len()
+    }
+
+    /// Sets the right nonce, adds the transaction to the mempool and sends it to every peer.
+    pub(crate) async fn submit_transaction(
+        &self,
+        transaction: Transaction,
+    ) -> Result<Transaction, NetworkError> {
+        let transaction = {
+            let mut blockchain = self
+                .blockchain
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+            let nonce = blockchain.next_nonce(&transaction);
+            let transaction = transaction.with_nonce(nonce);
+            blockchain.add_transaction(transaction.clone())?;
+            transaction
+        };
+
+        self.broadcast_transaction(&transaction, None).await;
+        Ok(transaction)
+    }
+
     pub(crate) fn peer_listen_addr(&self, socket_addr: SocketAddr) -> SocketAddr {
         self.peer_addrs
             .get(&socket_addr)
@@ -426,7 +455,7 @@ impl Network {
         &self.states
     }
 
-    fn get_connections_number(&self) -> usize {
+    pub(crate) fn get_connections_number(&self) -> usize {
         self.connections.len()
     }
 
