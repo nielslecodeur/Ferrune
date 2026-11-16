@@ -1,5 +1,6 @@
 use std::net::SocketAddr;
 use std::sync::{Arc, RwLock};
+use std::time::Instant;
 
 use dashmap::{DashMap, DashSet};
 use rand::RngExt;
@@ -8,12 +9,15 @@ use tokio::net::tcp::OwnedWriteHalf;
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::Mutex;
 use tokio::time::MissedTickBehavior;
-use tracing::{info, warn};
+use tracing::{debug, info, warn};
 
 use crate::blockchain::block::Block;
 use crate::blockchain::core::{Blockchain, BlockchainError};
 use crate::blockchain::transaction::Transaction;
-use crate::consts::{CONNECT_TIMEOUT, DISCOVERY_INTERVAL, MAX_BLOCKS_PER_MESSAGE, MAX_PEERS};
+use crate::consts::{
+    CONNECT_TIMEOUT, DISCOVERY_INTERVAL, MAX_BLOCKS_PER_MESSAGE, MAX_PEERS, PEER_TIMEOUT,
+    PING_INTERVAL,
+};
 use crate::network::NetworkError;
 use crate::network::message::{Message, MessageType};
 use crate::network::state::StateHandler;
@@ -34,6 +38,8 @@ pub(crate) struct Network {
     /// Registered peers, keyed by their listen address.
     connections: DashMap<SocketAddr, Writer>,
     peer_addrs: DashMap<SocketAddr, SocketAddr>,
+    /// Last time we received a message from a peer, keyed by its listen address.
+    last_seen: DashMap<SocketAddr, Instant>,
 }
 
 impl Network {
@@ -51,6 +57,7 @@ impl Network {
             ongoing_connections: DashMap::new(),
             connections: DashMap::new(),
             peer_addrs: DashMap::new(),
+            last_seen: DashMap::new(),
         }
     }
 
@@ -94,8 +101,36 @@ impl Network {
             .blockchain
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .add_transaction(transaction)?)
+    }
+
+    pub(crate) fn mempool_len(&self) -> usize {
+        self.blockchain
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
             .mempool
-            .insert(transaction)?)
+            .len()
+    }
+
+    /// Sets the right nonce, adds the transaction to the mempool and sends it to every peer.
+    pub(crate) async fn submit_transaction(
+        &self,
+        transaction: Transaction,
+    ) -> Result<Transaction, NetworkError> {
+        let transaction = {
+            let mut blockchain = self
+                .blockchain
+                .write()
+                .unwrap_or_else(|poisoned| poisoned.into_inner());
+
+            let nonce = blockchain.next_nonce(&transaction);
+            let transaction = transaction.with_nonce(nonce);
+            blockchain.add_transaction(transaction.clone())?;
+            transaction
+        };
+
+        self.broadcast_transaction(&transaction, None).await;
+        Ok(transaction)
     }
 
     pub(crate) fn peer_listen_addr(&self, socket_addr: SocketAddr) -> SocketAddr {
@@ -197,6 +232,60 @@ impl Network {
         }
     }
 
+    /// Pings every peer, and drops the ones that stayed silent for too long.
+    pub(crate) async fn check_peers(self: Arc<Self>) {
+        let mut interval = tokio::time::interval(PING_INTERVAL);
+        interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
+
+        loop {
+            interval.tick().await;
+
+            let peers: Vec<SocketAddr> =
+                self.connections.iter().map(|entry| *entry.key()).collect();
+
+            for peer in peers {
+                let silent = self
+                    .last_seen
+                    .get(&peer)
+                    .is_none_or(|last_seen| last_seen.elapsed() > PEER_TIMEOUT);
+
+                if silent {
+                    self.drop_peer(peer).await;
+                } else if let Err(error) = self.ping(peer).await {
+                    warn!(%peer, %error, "Failed to ping peer");
+                }
+            }
+        }
+    }
+
+    async fn drop_peer(&self, peer: SocketAddr) {
+        self.last_seen.remove(&peer);
+        self.peer_addrs
+            .retain(|_, listen_addr| *listen_addr != peer);
+
+        let Some((_, writer)) = self.connections.remove(&peer) else {
+            return;
+        };
+
+        warn!(
+            %peer,
+            peers = self.get_connections_number(),
+            "Peer timed out"
+        );
+
+        if let Err(error) = writer.lock().await.shutdown().await {
+            debug!(%peer, %error, "Failed to close connection");
+        }
+    }
+
+    pub(super) fn mark_seen(&self, socket_addr: SocketAddr) {
+        let peer = self.peer_listen_addr(socket_addr);
+
+        if self.is_connected(&peer) {
+            self.last_seen.insert(peer, Instant::now());
+        }
+    }
+
     pub(crate) async fn send_block(
         &self,
         addr: SocketAddr,
@@ -205,8 +294,14 @@ impl Network {
         self.converse(addr, MessageType::SendBlock(block)).await
     }
 
-    pub(crate) async fn broadcast_block(&self, block: &Block) {
-        let peers: Vec<SocketAddr> = self.connections.iter().map(|entry| *entry.key()).collect();
+    /// Sends to every peer except `exclude` (usually the peer we received it from).
+    pub(crate) async fn broadcast_block(&self, block: &Block, exclude: Option<SocketAddr>) {
+        let peers: Vec<SocketAddr> = self
+            .connections
+            .iter()
+            .map(|entry| *entry.key())
+            .filter(|peer| Some(*peer) != exclude)
+            .collect();
 
         for peer in peers {
             if let Err(error) = self.send_block(peer, block.clone()).await {
@@ -224,8 +319,18 @@ impl Network {
             .await
     }
 
-    pub(crate) async fn broadcast_transaction(&self, transaction: &Transaction) {
-        let peers: Vec<SocketAddr> = self.connections.iter().map(|entry| *entry.key()).collect();
+    /// Sends to every peer except `exclude` (usually the peer we received it from).
+    pub(crate) async fn broadcast_transaction(
+        &self,
+        transaction: &Transaction,
+        exclude: Option<SocketAddr>,
+    ) {
+        let peers: Vec<SocketAddr> = self
+            .connections
+            .iter()
+            .map(|entry| *entry.key())
+            .filter(|peer| Some(*peer) != exclude)
+            .collect();
 
         for peer in peers {
             if let Err(error) = self.send_transaction(peer, transaction.clone()).await {
@@ -308,6 +413,7 @@ impl Network {
             self.peer_addrs.insert(socket_addr, listen_addr);
         }
         self.connections.insert(listen_addr, writer);
+        self.last_seen.insert(listen_addr, Instant::now());
 
         info!(
             peer = %listen_addr,
@@ -335,6 +441,8 @@ impl Network {
             .remove_if(&listen_addr, |_, w| Arc::ptr_eq(w, writer))
             .is_some()
         {
+            self.last_seen.remove(&listen_addr);
+
             info!(
                 peer = %listen_addr,
                 peers = self.get_connections_number(),
@@ -347,7 +455,7 @@ impl Network {
         &self.states
     }
 
-    fn get_connections_number(&self) -> usize {
+    pub(crate) fn get_connections_number(&self) -> usize {
         self.connections.len()
     }
 

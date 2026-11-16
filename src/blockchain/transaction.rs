@@ -40,6 +40,24 @@ impl Transaction {
         Ok(())
     }
 
+    pub fn nonce(&self) -> u64 {
+        match self {
+            Transaction::Mint { nonce, .. }
+            | Transaction::Transfer { nonce, .. }
+            | Transaction::Stake { nonce, .. } => *nonce,
+        }
+    }
+
+    pub fn with_nonce(mut self, new_nonce: u64) -> Self {
+        match &mut self {
+            Transaction::Mint { nonce, .. }
+            | Transaction::Transfer { nonce, .. }
+            | Transaction::Stake { nonce, .. } => *nonce = new_nonce,
+        }
+
+        self
+    }
+
     pub fn hash(&self) -> Result<[u8; 32], serde_json::Error> {
         use sha2::{Digest, Sha256};
 

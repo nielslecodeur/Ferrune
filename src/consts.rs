@@ -3,6 +3,8 @@ use std::time::Duration;
 
 pub(crate) const MAX_PEERS: usize = 8;
 pub(crate) const DISCOVERY_INTERVAL: Duration = Duration::from_secs(60);
+pub(crate) const PING_INTERVAL: Duration = Duration::from_secs(10);
+pub(crate) const PEER_TIMEOUT: Duration = Duration::from_secs(30);
 pub(crate) const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
 pub(crate) const STATE_CLEANUP_INTERVAL: Duration = Duration::from_secs(1);
 pub(crate) const CONVERSATION_TTL: Duration = Duration::from_secs(60);

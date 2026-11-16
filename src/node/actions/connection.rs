@@ -53,7 +53,9 @@ pub(crate) async fn register(
     }
 
     let message = Message::new(MessageType::Ok, Some(id));
-    network.reply(addr, &message).await
+    network.reply(addr, &message).await?;
+
+    network.ask_height(addr).await
 }
 
 async fn reject_different_chain(
@@ -71,11 +73,12 @@ pub(crate) fn reject_connection(reason: &RejectReason) -> Result<(), NetworkErro
     Err(NetworkError::ConnectionRejected(format!("{reason:?}")))
 }
 
-pub(crate) fn confirm_registration(
+pub(crate) async fn confirm_registration(
     addr: SocketAddr,
     network: &Network,
 ) -> Result<(), NetworkError> {
-    network.register_connection(addr, addr)
+    network.register_connection(addr, addr)?;
+    network.ask_height(addr).await
 }
 
 pub(crate) async fn send_peer_addr(

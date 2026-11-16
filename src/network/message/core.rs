@@ -101,7 +101,7 @@ impl Message {
                     actions::transaction::confirm_transaction(addr, network);
                     Ok(())
                 }
-                _ => actions::connection::confirm_registration(addr, network),
+                _ => actions::connection::confirm_registration(addr, network).await,
             },
             MessageType::SendBlock(block) => {
                 actions::block::receive_block(self.id, block, addr, network).await
@@ -155,6 +155,7 @@ impl Message {
 
         while let Some(line) = lines.next_line().await? {
             let message: Self = serde_json::from_str(&line)?;
+            network.mark_seen(addr);
 
             if message.state().is_conversation_start() {
                 network

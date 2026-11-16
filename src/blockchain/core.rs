@@ -113,6 +113,35 @@ impl Blockchain {
         Ok(())
     }
 
+    fn sender<'a>(&'a self, transaction: &'a Transaction) -> &'a Address {
+        match transaction {
+            Transaction::Mint { .. } => self.state.mint_authority(),
+            Transaction::Transfer { from, .. } | Transaction::Stake { from, .. } => from,
+        }
+    }
+
+    /// Next nonce of the transaction's sender, counting its pending transactions.
+    pub fn next_nonce(&self, transaction: &Transaction) -> u64 {
+        let sender = self.sender(transaction);
+        let pending = self
+            .mempool
+            .iter()
+            .filter(|pending| self.sender(pending) == sender)
+            .count();
+
+        self.state.nonce(sender) + pending as u64
+    }
+
+    /// Adds a transaction to the mempool, unless it is already known or
+    /// already applied. Returns `false` in those cases.
+    pub fn add_transaction(&mut self, transaction: Transaction) -> Result<bool, serde_json::Error> {
+        if transaction.nonce() < self.state.nonce(self.sender(&transaction)) {
+            return Ok(false);
+        }
+
+        self.mempool.insert(transaction)
+    }
+
     /// Applies a block received from the network.
     ///
     /// Transactions are not signed yet, so the signer is the declared sender.
@@ -280,6 +309,25 @@ mod tests {
         chain.add_block(block(0, [0; 32], vec![mint()])).unwrap();
         assert_eq!(chain.mempool.len(), 1);
         assert_eq!(chain.state.balance(&address("alice")), 100);
+    }
+
+    #[test]
+    fn ignores_already_applied_transactions() {
+        let mut chain = chain();
+        chain.add_block(block(0, [0; 32], vec![mint()])).unwrap();
+        assert!(!chain.add_transaction(mint()).unwrap());
+        assert!(chain.add_transaction(transfer(10)).unwrap());
+        assert!(!chain.add_transaction(transfer(10)).unwrap());
+    }
+
+    #[test]
+    fn next_nonce_counts_pending_transactions() {
+        let mut chain = chain();
+        chain.add_block(block(0, [0; 32], vec![mint()])).unwrap();
+        assert_eq!(chain.next_nonce(&transfer(1)), 0);
+        chain.add_transaction(transfer(1)).unwrap();
+        assert_eq!(chain.next_nonce(&transfer(1)), 1);
+        assert_eq!(chain.next_nonce(&mint()), 1);
     }
 
     #[test]
