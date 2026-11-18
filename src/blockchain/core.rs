@@ -1,4 +1,5 @@
 use super::block::Block;
+use super::mempool::Mempool;
 use super::state::State;
 use super::state::StateError;
 use super::transaction::{Address, Transaction};
@@ -7,6 +8,7 @@ use super::transaction::{Address, Transaction};
 pub struct Blockchain {
     pub blocks: Vec<Block>,
     pub state: State,
+    pub mempool: Mempool,
 }
 
 #[derive(Debug)]
@@ -24,6 +26,7 @@ impl Blockchain {
         Self {
             blocks: Vec::new(),
             state,
+            mempool: Mempool::default(),
         }
     }
 
