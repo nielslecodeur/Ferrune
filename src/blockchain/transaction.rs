@@ -57,6 +57,21 @@ impl Transaction {
 
         self
     }
+}
+
+/// A transaction with the signature of its sender.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SignedTransaction {
+    pub transaction: Transaction,
+    pub signer: Address,
+    pub signature: String,
+}
+
+impl SignedTransaction {
+    pub fn has_valid_signature(&self) -> bool {
+        serde_json::to_vec(&self.transaction)
+            .is_ok_and(|message| super::wallet::verify(&self.signer, &message, &self.signature))
+    }
 
     pub fn hash(&self) -> Result<[u8; 32], serde_json::Error> {
         use sha2::{Digest, Sha256};

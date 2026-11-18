@@ -3,17 +3,17 @@ use std::net::SocketAddr;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use crate::blockchain::transaction::Transaction;
+use crate::blockchain::transaction::SignedTransaction;
 use crate::network::message::{Message, MessageType, RejectReason};
 use crate::network::{Network, NetworkError};
 
 pub(crate) async fn receive_transaction(
     id: Uuid,
-    transaction: &Transaction,
+    transaction: &SignedTransaction,
     addr: SocketAddr,
     network: &Network,
 ) -> Result<(), NetworkError> {
-    if transaction.validate_basic().is_err() {
+    if !network.is_valid_transaction(transaction) {
         let message = Message::new(
             MessageType::Reject(RejectReason::InvalidTransaction),
             Some(id),

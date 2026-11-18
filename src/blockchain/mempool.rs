@@ -1,17 +1,17 @@
 use std::collections::HashMap;
 use std::collections::hash_map::Entry;
 
-use super::transaction::Transaction;
+use super::transaction::SignedTransaction;
 
 /// Transactions received but not yet included in a block, keyed by their hash.
 #[derive(Debug, Clone, Default)]
 pub struct Mempool {
-    transactions: HashMap<[u8; 32], Transaction>,
+    transactions: HashMap<[u8; 32], SignedTransaction>,
 }
 
 impl Mempool {
     /// Returns `false` if the transaction was already known.
-    pub fn insert(&mut self, transaction: Transaction) -> Result<bool, serde_json::Error> {
+    pub fn insert(&mut self, transaction: SignedTransaction) -> Result<bool, serde_json::Error> {
         match self.transactions.entry(transaction.hash()?) {
             Entry::Vacant(entry) => {
                 entry.insert(transaction);
@@ -21,7 +21,7 @@ impl Mempool {
         }
     }
 
-    pub fn remove_included(&mut self, transactions: &[Transaction]) {
+    pub fn remove_included(&mut self, transactions: &[SignedTransaction]) {
         for transaction in transactions {
             if let Ok(hash) = transaction.hash() {
                 self.transactions.remove(&hash);
@@ -29,8 +29,12 @@ impl Mempool {
         }
     }
 
-    pub fn iter(&self) -> impl Iterator<Item = &Transaction> {
+    pub fn iter(&self) -> impl Iterator<Item = &SignedTransaction> {
         self.transactions.values()
+    }
+
+    pub fn retain(&mut self, keep: impl Fn(&SignedTransaction) -> bool) {
+        self.transactions.retain(|_, transaction| keep(transaction));
     }
 
     pub fn len(&self) -> usize {
@@ -41,13 +45,17 @@ impl Mempool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::blockchain::transaction::Address;
+    use crate::blockchain::transaction::{Address, Transaction};
 
-    fn mint(nonce: u64) -> Transaction {
-        Transaction::Mint {
-            to: Address("alice".into()),
-            amount: 10,
-            nonce,
+    fn mint(nonce: u64) -> SignedTransaction {
+        SignedTransaction {
+            transaction: Transaction::Mint {
+                to: Address("alice".into()),
+                amount: 10,
+                nonce,
+            },
+            signer: Address("admin".into()),
+            signature: String::new(),
         }
     }
 

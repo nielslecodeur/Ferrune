@@ -2,7 +2,9 @@ use super::block::Block;
 use super::mempool::Mempool;
 use super::state::State;
 use super::state::StateError;
-use super::transaction::{Address, Transaction};
+use super::transaction::{Address, SignedTransaction, Transaction};
+use super::wallet::Wallet;
+use crate::consts::MAX_TRANSACTIONS_PER_BLOCK;
 
 #[derive(Debug, Clone)]
 pub struct Blockchain {
@@ -19,6 +21,8 @@ pub enum BlockchainError {
     HeightOverflow,
     HashCalculation(serde_json::Error),
     InvalidTransaction(StateError),
+    InvalidSignature,
+    InvalidProposer,
 }
 
 impl Blockchain {
@@ -87,7 +91,7 @@ impl Blockchain {
         verify_signer: F,
     ) -> Result<(), BlockchainError>
     where
-        F: Fn(&Transaction) -> Result<Address, BlockchainError>,
+        F: Fn(&SignedTransaction) -> Result<Address, BlockchainError>,
     {
         // 1. Vérifier le bloc avec validate_block.
         self.validate_block(&block)?;
@@ -101,61 +105,182 @@ impl Blockchain {
         for transaction in &block.transactions {
             let signer = verify_signer(transaction)?;
 
-            bis.apply_transaction(transaction, &signer)
+            bis.apply_transaction(&transaction.transaction, &signer)
                 .map_err(BlockchainError::InvalidTransaction)?;
         }
         // 4. Remplacer self.state par l'état temporaire.
         self.state = bis;
         // 5. Ajouter le bloc à self.blocks.
         self.mempool.remove_included(&block.transactions);
+        let state = &self.state;
+        self.mempool.retain(|pending| {
+            pending.transaction.nonce() >= state.nonce(sender(state, &pending.transaction))
+        });
         self.blocks.push(block);
 
         Ok(())
     }
 
-    fn sender<'a>(&'a self, transaction: &'a Transaction) -> &'a Address {
-        match transaction {
-            Transaction::Mint { .. } => self.state.mint_authority(),
-            Transaction::Transfer { from, .. } | Transaction::Stake { from, .. } => from,
-        }
-    }
-
     /// Next nonce of the transaction's sender, counting its pending transactions.
     pub fn next_nonce(&self, transaction: &Transaction) -> u64 {
-        let sender = self.sender(transaction);
+        let sender = sender(&self.state, transaction);
         let pending = self
             .mempool
             .iter()
-            .filter(|pending| self.sender(pending) == sender)
+            .filter(|pending| self::sender(&self.state, &pending.transaction) == sender)
             .count();
 
         self.state.nonce(sender) + pending as u64
     }
 
+    /// The signature is valid and comes from the sender of the transaction.
+    pub fn is_valid_transaction(&self, transaction: &SignedTransaction) -> bool {
+        transaction.transaction.validate_basic().is_ok()
+            && transaction.has_valid_signature()
+            && &transaction.signer == sender(&self.state, &transaction.transaction)
+    }
+
     /// Adds a transaction to the mempool, unless it is already known or
     /// already applied. Returns `false` in those cases.
-    pub fn add_transaction(&mut self, transaction: Transaction) -> Result<bool, serde_json::Error> {
-        if transaction.nonce() < self.state.nonce(self.sender(&transaction)) {
+    pub fn add_transaction(
+        &mut self,
+        transaction: SignedTransaction,
+    ) -> Result<bool, serde_json::Error> {
+        let sender = sender(&self.state, &transaction.transaction);
+
+        if transaction.transaction.nonce() < self.state.nonce(sender) {
             return Ok(false);
         }
 
         self.mempool.insert(transaction)
     }
 
-    /// Applies a block received from the network.
+    /// Validator expected to propose the next block: picked among the accounts
+    /// with a stake, with a probability proportional to it. The previous hash
+    /// is used as the random seed, so every node picks the same one.
     ///
-    /// Transactions are not signed yet, so the signer is the declared sender.
-    pub fn add_block(&mut self, block: Block) -> Result<(), BlockchainError> {
-        let mint_authority = self.state.mint_authority().clone();
+    /// Until someone stakes, the mint authority proposes every block.
+    pub fn proposer(&self) -> Option<Address> {
+        let previous = self.blocks.last()?;
 
-        self.apply_finalized_block(block, |transaction| {
-            Ok(match transaction {
-                Transaction::Mint { .. } => mint_authority.clone(),
-                Transaction::Transfer { from, .. } | Transaction::Stake { from, .. } => {
-                    from.clone()
-                }
-            })
-        })
+        let mut validators: Vec<(&Address, u64)> = self
+            .state
+            .accounts
+            .iter()
+            .filter(|(_, account)| account.stake > 0)
+            .map(|(address, account)| (address, account.stake))
+            .collect();
+
+        if validators.is_empty() {
+            return Some(self.state.mint_authority().clone());
+        }
+
+        validators.sort_by(|a, b| a.0.0.cmp(&b.0.0));
+
+        let total: u128 = validators.iter().map(|(_, stake)| u128::from(*stake)).sum();
+        let seed = u64::from_le_bytes(previous.hash[..8].try_into().ok()?);
+        let mut target = u128::from(seed) % total;
+
+        for (address, stake) in validators {
+            if target < u128::from(stake) {
+                return Some(address.clone());
+            }
+            target -= u128::from(stake);
+        }
+
+        None
+    }
+
+    /// First block of the chain. Its proposer becomes the mint authority.
+    pub fn genesis(wallet: &Wallet) -> Result<Block, serde_json::Error> {
+        let mut block = Block::new(0, [0; 32], Vec::new(), wallet.address())?;
+        wallet.sign_block(&mut block);
+        Ok(block)
+    }
+
+    /// Builds the next block from the mempool if `wallet` is the expected
+    /// proposer and there is something to include.
+    pub fn build_block(&self, wallet: &Wallet) -> Result<Option<Block>, serde_json::Error> {
+        let Some(previous) = self.blocks.last() else {
+            return Ok(None);
+        };
+
+        if self.proposer() != Some(wallet.address()) {
+            return Ok(None);
+        }
+
+        let mut pending: Vec<&SignedTransaction> = self.mempool.iter().collect();
+        pending.sort_by_key(|transaction| transaction.transaction.nonce());
+
+        // Only keeps the transactions that apply on the current state.
+        let mut state = self.state.clone();
+        let mut transactions = Vec::new();
+
+        for transaction in pending {
+            if transactions.len() == MAX_TRANSACTIONS_PER_BLOCK {
+                break;
+            }
+
+            if self.is_valid_transaction(transaction)
+                && state
+                    .apply_transaction(&transaction.transaction, &transaction.signer)
+                    .is_ok()
+            {
+                transactions.push(transaction.clone());
+            }
+        }
+
+        if transactions.is_empty() {
+            return Ok(None);
+        }
+
+        let mut block = Block::new(
+            previous.height + 1,
+            previous.hash,
+            transactions,
+            wallet.address(),
+        )?;
+        wallet.sign_block(&mut block);
+
+        Ok(Some(block))
+    }
+
+    /// Applies a block received from the network, or produced by this node.
+    pub fn add_block(&mut self, block: Block) -> Result<(), BlockchainError> {
+        self.validate_block(&block)?;
+
+        if !block.has_valid_signature() {
+            return Err(BlockchainError::InvalidSignature);
+        }
+
+        let previous_state = self.state.clone();
+
+        if block.height == 0 {
+            self.state = State::new(block.proposer.clone());
+        } else if self.proposer() != Some(block.proposer.clone()) {
+            return Err(BlockchainError::InvalidProposer);
+        }
+
+        let result = self.apply_finalized_block(block, |transaction| {
+            if transaction.has_valid_signature() {
+                Ok(transaction.signer.clone())
+            } else {
+                Err(BlockchainError::InvalidSignature)
+            }
+        });
+
+        if result.is_err() {
+            self.state = previous_state;
+        }
+
+        result
+    }
+}
+
+fn sender<'a>(state: &'a State, transaction: &'a Transaction) -> &'a Address {
+    match transaction {
+        Transaction::Mint { .. } => state.mint_authority(),
+        Transaction::Transfer { from, .. } | Transaction::Stake { from, .. } => from,
     }
 }
 
@@ -170,11 +295,24 @@ mod tests {
         Blockchain::new(State::new(address("admin")))
     }
     fn block(height: u64, previous: [u8; 32], transactions: Vec<Transaction>) -> Block {
+        let transactions = transactions.into_iter().map(unsigned).collect();
         Block::new(height, previous, transactions, address("validator")).unwrap()
     }
+    fn unsigned(transaction: Transaction) -> SignedTransaction {
+        SignedTransaction {
+            signer: match &transaction {
+                Transaction::Mint { .. } => address("admin"),
+                Transaction::Transfer { from, .. } | Transaction::Stake { from, .. } => {
+                    from.clone()
+                }
+            },
+            transaction,
+            signature: String::new(),
+        }
+    }
     // Simule un verificateur uniquement pour ces tests, sans authentification reelle.
-    fn signer(tx: &Transaction) -> Result<Address, BlockchainError> {
-        Ok(match tx {
+    fn signer(tx: &SignedTransaction) -> Result<Address, BlockchainError> {
+        Ok(match &tx.transaction {
             Transaction::Mint { .. } => address("admin"),
             Transaction::Transfer { from, .. } | Transaction::Stake { from, .. } => from.clone(),
         })
@@ -284,7 +422,7 @@ mod tests {
         let before = chain.state.clone();
         let result = chain.apply_finalized_block(
             block(0, [0; 32], vec![mint(), transfer(1)]),
-            |tx| match tx {
+            |tx| match &tx.transaction {
                 Transaction::Mint { .. } => signer(tx),
                 _ => Err(BlockchainError::InvalidTransaction(
                     StateError::Unauthorized,
@@ -301,33 +439,158 @@ mod tests {
         assert!(chain.blocks.is_empty());
     }
 
-    #[test]
-    fn added_block_clears_its_transactions_from_mempool() {
-        let mut chain = chain();
-        chain.mempool.insert(mint()).unwrap();
-        chain.mempool.insert(transfer(30)).unwrap();
-        chain.add_block(block(0, [0; 32], vec![mint()])).unwrap();
-        assert_eq!(chain.mempool.len(), 1);
-        assert_eq!(chain.state.balance(&address("alice")), 100);
+    /// Chain whose genesis was proposed by `admin`, so `admin` is the mint
+    /// authority and proposes the next blocks.
+    fn signed_chain(admin: &Wallet) -> Blockchain {
+        let mut chain = Blockchain::new(State::new(address("nobody")));
+        chain
+            .add_block(Blockchain::genesis(admin).unwrap())
+            .unwrap();
+        chain
+    }
+    fn signed_mint(admin: &Wallet, to: &Wallet, amount: u64, nonce: u64) -> SignedTransaction {
+        admin
+            .sign_transaction(Transaction::Mint {
+                to: to.address(),
+                amount,
+                nonce,
+            })
+            .unwrap()
+    }
+    fn signed_stake(wallet: &Wallet, amount: u64) -> SignedTransaction {
+        wallet
+            .sign_transaction(Transaction::Stake {
+                from: wallet.address(),
+                amount,
+                nonce: 0,
+            })
+            .unwrap()
+    }
+    fn produce(chain: &mut Blockchain, proposer: &Wallet) {
+        let block = chain.build_block(proposer).unwrap().unwrap();
+        chain.add_block(block).unwrap();
     }
 
     #[test]
-    fn ignores_already_applied_transactions() {
-        let mut chain = chain();
-        chain.add_block(block(0, [0; 32], vec![mint()])).unwrap();
-        assert!(!chain.add_transaction(mint()).unwrap());
-        assert!(chain.add_transaction(transfer(10)).unwrap());
-        assert!(!chain.add_transaction(transfer(10)).unwrap());
+    fn genesis_proposer_becomes_mint_authority() {
+        let admin = Wallet::generate();
+        let chain = signed_chain(&admin);
+        assert_eq!(chain.state.mint_authority(), &admin.address());
+        assert_eq!(chain.proposer(), Some(admin.address()));
+    }
+
+    #[test]
+    fn produced_block_is_applied_and_clears_mempool() {
+        let admin = Wallet::generate();
+        let alice = Wallet::generate();
+        let mut chain = signed_chain(&admin);
+
+        assert!(
+            chain
+                .add_transaction(signed_mint(&admin, &alice, 100, 0))
+                .unwrap()
+        );
+        assert!(
+            chain
+                .add_transaction(signed_mint(&admin, &alice, 5, 2))
+                .unwrap()
+        );
+        produce(&mut chain, &admin);
+
+        assert_eq!(chain.height(), Some(1));
+        assert_eq!(chain.state.balance(&alice.address()), 100);
+        // The transaction with a future nonce stays in the mempool.
+        assert_eq!(chain.mempool.len(), 1);
+        assert!(
+            !chain
+                .add_transaction(signed_mint(&admin, &alice, 100, 0))
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn only_the_expected_proposer_can_build_or_add_a_block() {
+        let admin = Wallet::generate();
+        let other = Wallet::generate();
+        let mut chain = signed_chain(&admin);
+        chain
+            .add_transaction(signed_mint(&admin, &other, 100, 0))
+            .unwrap();
+
+        assert!(chain.build_block(&other).unwrap().is_none());
+
+        let previous = chain.blocks.last().unwrap();
+        let mut block = Block::new(
+            1,
+            previous.hash,
+            chain.mempool.iter().cloned().collect(),
+            other.address(),
+        )
+        .unwrap();
+        other.sign_block(&mut block);
+        assert!(matches!(
+            chain.add_block(block),
+            Err(BlockchainError::InvalidProposer)
+        ));
+    }
+
+    #[test]
+    fn rejects_unsigned_blocks_and_forged_transactions() {
+        let admin = Wallet::generate();
+        let alice = Wallet::generate();
+        let mut chain = signed_chain(&admin);
+
+        let unsigned_block = Block::new(1, chain.blocks[0].hash, vec![], admin.address()).unwrap();
+        assert!(matches!(
+            chain.add_block(unsigned_block),
+            Err(BlockchainError::InvalidSignature)
+        ));
+
+        // Alice can not mint, even with a valid signature.
+        let forged = alice
+            .sign_transaction(Transaction::Mint {
+                to: alice.address(),
+                amount: 100,
+                nonce: 0,
+            })
+            .unwrap();
+        assert!(!chain.is_valid_transaction(&forged));
+        assert!(chain.is_valid_transaction(&signed_mint(&admin, &alice, 100, 0)));
+    }
+
+    #[test]
+    fn stakers_become_the_proposers() {
+        let admin = Wallet::generate();
+        let alice = Wallet::generate();
+        let mut chain = signed_chain(&admin);
+
+        chain
+            .add_transaction(signed_mint(&admin, &alice, 100, 0))
+            .unwrap();
+        produce(&mut chain, &admin);
+        chain.add_transaction(signed_stake(&alice, 10)).unwrap();
+        produce(&mut chain, &admin);
+
+        assert_eq!(chain.proposer(), Some(alice.address()));
+        assert!(chain.build_block(&admin).unwrap().is_none());
     }
 
     #[test]
     fn next_nonce_counts_pending_transactions() {
-        let mut chain = chain();
-        chain.add_block(block(0, [0; 32], vec![mint()])).unwrap();
-        assert_eq!(chain.next_nonce(&transfer(1)), 0);
-        chain.add_transaction(transfer(1)).unwrap();
-        assert_eq!(chain.next_nonce(&transfer(1)), 1);
-        assert_eq!(chain.next_nonce(&mint()), 1);
+        let admin = Wallet::generate();
+        let alice = Wallet::generate();
+        let mut chain = signed_chain(&admin);
+        let mint = |to: &Wallet| Transaction::Mint {
+            to: to.address(),
+            amount: 1,
+            nonce: 0,
+        };
+
+        assert_eq!(chain.next_nonce(&mint(&alice)), 0);
+        chain
+            .add_transaction(signed_mint(&admin, &alice, 1, 0))
+            .unwrap();
+        assert_eq!(chain.next_nonce(&mint(&alice)), 1);
     }
 
     #[test]
