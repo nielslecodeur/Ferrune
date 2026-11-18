@@ -143,10 +143,24 @@ src
 
 CPU flamegraphs of two nodes on localhost, over 30 seconds: a root node sending 3,000 transfers, and a node receiving them. Open them in a browser to zoom and search.
 
-- [Producer](docs/profiling/flamegraph-producer.svg): 68% of the CPU time is spent in `Uuid::new_v4`, which asks the system for random bytes for every message id.
-- [Receiver](docs/profiling/flamegraph-receiver.svg): 78% of the CPU time is spent writing the `INFO` log of each received transaction.
+| | Producer | Receiver |
+|---|---|---|
+| Before | [before-producer.svg](docs/profiling/before-producer.svg) | [before-receiver.svg](docs/profiling/before-receiver.svg) |
+| After | [after-producer.svg](docs/profiling/after-producer.svg) | [after-receiver.svg](docs/profiling/after-receiver.svg) |
 
-Signature checks and hashing take about 3%. The nodes are mostly idle: the producer used about 1.4% of a core.
+Before, two system calls were made for every message:
+
+- **Producer**: `Uuid::new_v4` asked the system for random bytes for every message id. The `fast-rng` feature of `uuid` now uses a fast generator seeded once.
+- **Receiver**: every received transaction was written to the `INFO` log. These logs are now at `DEBUG` level (`RUST_LOG=debug` to see them).
+
+Measured without the profiler (user + system CPU time, same scenario, 3 runs each):
+
+| | Before | After |
+|---|---|---|
+| Producer | 0.485 s | 0.45 s (-7%) |
+| Receiver | 0.30 s | 0.27 s (-10%) |
+
+The flamegraphs overstate these two calls (68% and 78%): on macOS, the profiling signal is delivered when a system call returns, so the time spent in the kernel is charged to the system call that was running. In the "after" flamegraphs, the same time is charged to the TCP write of each message. Signature checks and hashing take about 3%, and the nodes are mostly idle (3,000 transfers are accepted in 0.4 s).
 
 They were recorded with [pprof](https://crates.io/crates/pprof) (`flamegraph` and `frame-pointer` features), on a release build with debug symbols and frame pointers.
 

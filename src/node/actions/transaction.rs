@@ -1,6 +1,6 @@
 use std::net::SocketAddr;
 
-use tracing::{debug, info, warn};
+use tracing::{debug, warn};
 use uuid::Uuid;
 
 use crate::blockchain::transaction::SignedTransaction;
@@ -24,7 +24,8 @@ pub(crate) async fn receive_transaction(
     let peer = network.peer_listen_addr(addr);
 
     if network.add_transaction(transaction.clone())? {
-        info!(%peer, ?transaction, "Transaction added to mempool");
+        // One line per transaction: kept at debug, it was most of the CPU time.
+        debug!(%peer, ?transaction, "Transaction added to mempool");
 
         let message = Message::new(MessageType::Ok, Some(id));
         network.reply(addr, &message).await?;
@@ -40,7 +41,7 @@ pub(crate) async fn receive_transaction(
 }
 
 pub(crate) fn confirm_transaction(addr: SocketAddr, network: &Network) {
-    info!(peer = %network.peer_listen_addr(addr), "Transaction acknowledged");
+    debug!(peer = %network.peer_listen_addr(addr), "Transaction acknowledged");
 }
 
 pub(crate) fn reject_transaction(reason: &RejectReason, addr: SocketAddr, network: &Network) {
