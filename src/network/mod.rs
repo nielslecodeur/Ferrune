@@ -7,3 +7,6 @@ pub(crate) use core::Network;
 
 pub(crate) use error::NetworkError;
 use state::{State, StateError};
+
+#[cfg(test)]
+mod tests;

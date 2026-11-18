@@ -547,7 +547,7 @@ impl Network {
         Some(candidates[index])
     }
 
-    fn is_connected(&self, addr: &SocketAddr) -> bool {
+    pub(super) fn is_connected(&self, addr: &SocketAddr) -> bool {
         self.connections.contains_key(addr)
     }
 }
