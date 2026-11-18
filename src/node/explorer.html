@@ -1,0 +1,306 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Ferrune Explorer</title>
+<style>
+  :root {
+    --bg: #f6f5f2;
+    --surface: #ffffff;
+    --surface-2: #f0eee9;
+    --border: #e3e0d8;
+    --text: #1d1c1a;
+    --muted: #6f6b63;
+    --accent: #b4532a;
+    --accent-soft: #f6e6dd;
+    --good: #2f7d4f;
+    --good-soft: #e1f1e7;
+    --warn: #9a6b00;
+    --mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #151413;
+      --surface: #1e1d1b;
+      --surface-2: #262522;
+      --border: #34322e;
+      --text: #eceae5;
+      --muted: #9b968c;
+      --accent: #e0805a;
+      --accent-soft: #3a2a22;
+      --good: #6cc792;
+      --good-soft: #1f3328;
+      --warn: #e2b04a;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--text);
+    font: 14px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 24px 16px 48px; }
+  header {
+    display: flex; flex-wrap: wrap; align-items: center; gap: 12px 24px;
+    justify-content: space-between; margin-bottom: 20px;
+  }
+  h1 { font-size: 20px; margin: 0; letter-spacing: -0.01em; }
+  h1 span { color: var(--accent); }
+  .meta { display: flex; flex-wrap: wrap; gap: 8px 16px; color: var(--muted); font-size: 13px; align-items: center; }
+  .live { display: inline-flex; align-items: center; gap: 6px; }
+  .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--good); }
+  .live.off .dot { background: var(--warn); }
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 12px; margin-bottom: 20px; }
+  .card { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; }
+  .stat { padding: 14px 16px; }
+  .stat .label { color: var(--muted); font-size: 12px; text-transform: uppercase; letter-spacing: 0.04em; }
+  .stat .value { font-size: 24px; font-weight: 600; margin-top: 2px; font-variant-numeric: tabular-nums; }
+  .stat .value.small { font-size: 15px; margin-top: 8px; }
+  .grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(0, 1fr); gap: 20px; align-items: start; }
+  @media (max-width: 860px) { .grid { grid-template-columns: minmax(0, 1fr); } }
+  section h2 {
+    font-size: 13px; text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted);
+    margin: 0; padding: 12px 16px; border-bottom: 1px solid var(--border);
+    display: flex; justify-content: space-between;
+  }
+  .side { display: grid; gap: 20px; }
+  .empty { padding: 16px; color: var(--muted); }
+  .block { border-bottom: 1px solid var(--border); }
+  .block:last-child { border-bottom: 0; }
+  .block summary {
+    list-style: none; cursor: pointer; padding: 12px 16px;
+    display: grid; grid-template-columns: 70px minmax(0, 1fr) auto; gap: 12px; align-items: center;
+  }
+  .block summary::-webkit-details-marker { display: none; }
+  .block summary:hover { background: var(--surface-2); }
+  .height { font-weight: 600; font-variant-numeric: tabular-nums; }
+  .height::before { content: "#"; color: var(--muted); font-weight: 400; }
+  .block .hash { font-family: var(--mono); font-size: 12px; color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .pill { font-size: 12px; padding: 2px 8px; border-radius: 999px; background: var(--surface-2); color: var(--muted); white-space: nowrap; }
+  .pill.has { background: var(--accent-soft); color: var(--accent); }
+  .detail { padding: 4px 16px 16px; }
+  .kv { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 4px 12px; font-size: 13px; margin-bottom: 12px; }
+  .kv dt { color: var(--muted); }
+  .kv dd { margin: 0; font-family: var(--mono); font-size: 12px; word-break: break-all; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; font-weight: 500; color: var(--muted); font-size: 12px; padding: 8px 16px; border-bottom: 1px solid var(--border); }
+  td { padding: 8px 16px; border-bottom: 1px solid var(--border); vertical-align: middle; }
+  tr:last-child td { border-bottom: 0; }
+  td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; }
+  .detail .table-scroll { background: var(--surface-2); border-radius: 8px; }
+  .detail th, .detail td { padding: 6px 10px; }
+  .kind { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
+  .kind.mint { color: var(--good); }
+  .kind.transfer { color: var(--accent); }
+  .kind.stake { color: var(--warn); }
+  .addr {
+    display: inline-flex; align-items: center; gap: 6px; font-family: var(--mono); font-size: 12px;
+    cursor: pointer; border: 0; background: none; color: inherit; padding: 0; white-space: nowrap;
+  }
+  .addr:hover { color: var(--accent); }
+  .swatch { width: 10px; height: 10px; border-radius: 3px; flex: none; }
+  .tag { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 11px; padding: 0 6px; border-radius: 999px; background: var(--good-soft); color: var(--good); }
+  .tag.authority { background: var(--accent-soft); color: var(--accent); }
+  .table-scroll { overflow-x: auto; }
+  .toast {
+    position: fixed; bottom: 20px; left: 50%; transform: translateX(-50%);
+    background: var(--text); color: var(--bg); padding: 8px 14px; border-radius: 8px; font-size: 13px;
+    opacity: 0; transition: opacity 0.2s; pointer-events: none;
+  }
+  .toast.show { opacity: 1; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span>Ferrune</span> Explorer</h1>
+    <div class="meta">
+      <span>Node <span id="listen">…</span></span>
+      <span>Chain <span id="chain">…</span></span>
+      <span id="own"></span>
+      <span class="live" id="live"><span class="dot"></span><span id="live-text">Connecting…</span></span>
+    </div>
+  </header>
+
+  <div class="stats">
+    <div class="card stat"><div class="label">Height</div><div class="value" id="s-height">–</div></div>
+    <div class="card stat"><div class="label">Peers</div><div class="value" id="s-peers">–</div></div>
+    <div class="card stat"><div class="label">Mempool</div><div class="value" id="s-mempool">–</div></div>
+    <div class="card stat"><div class="label">Transactions</div><div class="value" id="s-txs">–</div></div>
+    <div class="card stat"><div class="label">Next proposer</div><div class="value small" id="s-proposer">–</div></div>
+  </div>
+
+  <div class="grid">
+    <section class="card">
+      <h2><span>Blocks</span><span id="blocks-count"></span></h2>
+      <div id="blocks"><div class="empty">Loading…</div></div>
+    </section>
+
+    <div class="side">
+      <section class="card">
+        <h2><span>Accounts</span><span id="accounts-count"></span></h2>
+        <div class="table-scroll" id="accounts"></div>
+      </section>
+      <section class="card">
+        <h2><span>Mempool</span></h2>
+        <div class="table-scroll" id="mempool"></div>
+      </section>
+      <section class="card">
+        <h2><span>Peers</span></h2>
+        <div id="peers"></div>
+      </section>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast">Address copied</div>
+
+<script>
+  const REFRESH_MS = 2000;
+  const open = new Set();
+  let data = null;
+
+  const escape = (text) => String(text).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  })[c]);
+
+  // Same address, same color: makes it easy to follow an account.
+  function color(address) {
+    let hash = 2166136261;
+    for (const c of address) hash = Math.imul(hash ^ c.charCodeAt(0), 16777619) >>> 0;
+    return `hsl(${hash % 360} 60% 55%)`;
+  }
+
+  function short(address) {
+    return address.length > 14 ? `${address.slice(0, 6)}…${address.slice(-4)}` : address || "–";
+  }
+
+  function addr(address) {
+    if (!address) return "–";
+    let tags = "";
+    if (address === data.address) tags += '<span class="tag">you</span>';
+    if (address === data.mint_authority) tags += '<span class="tag authority">mint</span>';
+    return `<button class="addr" data-copy="${escape(address)}" title="${escape(address)}">` +
+      `<span class="swatch" style="background:${color(address)}"></span>${escape(short(address))}${tags}</button>`;
+  }
+
+  function transactionsTable(transactions) {
+    if (!transactions.length) return '<div class="empty">No transactions</div>';
+    const rows = transactions.map((tx) => `<tr>
+      <td><span class="kind ${tx.kind}">${tx.kind}</span></td>
+      <td>${addr(tx.from)}</td>
+      <td>${tx.to ? addr(tx.to) : "–"}</td>
+      <td class="num">${tx.amount}</td>
+      <td class="num">${tx.nonce}</td>
+    </tr>`).join("");
+    return `<div class="table-scroll"><table><thead><tr><th>Type</th><th>From</th><th>To</th><th class="num">Amount</th><th class="num">Nonce</th></tr></thead><tbody>${rows}</tbody></table></div>`;
+  }
+
+  function renderBlocks() {
+    const element = document.getElementById("blocks");
+    document.getElementById("blocks-count").textContent = data.blocks.length;
+
+    if (!data.blocks.length) {
+      element.innerHTML = '<div class="empty">No blocks yet. Start a root node or connect to one.</div>';
+      return;
+    }
+
+    element.innerHTML = data.blocks.map((block) => {
+      const count = block.transactions.length;
+      return `<details class="block" data-hash="${block.hash}" ${open.has(block.hash) ? "open" : ""}>
+        <summary>
+          <span class="height">${block.height}</span>
+          <span class="hash">${block.hash}</span>
+          <span class="pill ${count ? "has" : ""}">${count} tx</span>
+        </summary>
+        <div class="detail">
+          <dl class="kv">
+            <dt>Hash</dt><dd>${block.hash}</dd>
+            <dt>Previous</dt><dd>${block.previous_hash}</dd>
+            <dt>Proposer</dt><dd>${addr(block.proposer)}</dd>
+          </dl>
+          ${transactionsTable(block.transactions)}
+        </div>
+      </details>`;
+    }).join("");
+
+    element.querySelectorAll("details").forEach((details) => {
+      details.addEventListener("toggle", () => {
+        details.open ? open.add(details.dataset.hash) : open.delete(details.dataset.hash);
+      });
+    });
+  }
+
+  function renderAccounts() {
+    const element = document.getElementById("accounts");
+    document.getElementById("accounts-count").textContent = data.accounts.length;
+
+    if (!data.accounts.length) {
+      element.innerHTML = '<div class="empty">No accounts yet</div>';
+      return;
+    }
+
+    const rows = data.accounts.map((account) => `<tr>
+      <td>${addr(account.address)}</td>
+      <td class="num">${account.balance}</td>
+      <td class="num">${account.stake}</td>
+    </tr>`).join("");
+    element.innerHTML = `<table><thead><tr><th>Address</th><th class="num">Balance</th><th class="num">Stake</th></tr></thead><tbody>${rows}</tbody></table>`;
+  }
+
+  function render() {
+    document.getElementById("listen").textContent = data.listen_addr;
+    document.getElementById("chain").textContent = data.chain_id;
+    document.getElementById("own").innerHTML = addr(data.address);
+
+    const transactions = data.blocks.reduce((sum, block) => sum + block.transactions.length, 0);
+    document.getElementById("s-height").textContent = data.height ?? "–";
+    document.getElementById("s-peers").textContent = data.peers.length;
+    document.getElementById("s-mempool").textContent = data.mempool.length;
+    document.getElementById("s-txs").textContent = transactions;
+    document.getElementById("s-proposer").innerHTML = addr(data.proposer);
+
+    renderBlocks();
+    renderAccounts();
+
+    document.getElementById("mempool").innerHTML = data.mempool.length
+      ? transactionsTable(data.mempool)
+      : '<div class="empty">Empty</div>';
+
+    document.getElementById("peers").innerHTML = data.peers.length
+      ? `<table><tbody>${data.peers.map((peer) => `<tr><td style="font-family:var(--mono);font-size:12px">${escape(peer)}</td></tr>`).join("")}</tbody></table>`
+      : '<div class="empty">No peers</div>';
+  }
+
+  async function refresh() {
+    const live = document.getElementById("live");
+    try {
+      const response = await fetch("/api", { cache: "no-store" });
+      data = await response.json();
+      render();
+      live.classList.remove("off");
+      document.getElementById("live-text").textContent = "Live";
+    } catch {
+      live.classList.add("off");
+      document.getElementById("live-text").textContent = "Node unreachable";
+    }
+  }
+
+  document.addEventListener("click", async (event) => {
+    const button = event.target.closest("[data-copy]");
+    if (!button) return;
+    event.preventDefault();
+    try {
+      await navigator.clipboard.writeText(button.dataset.copy);
+      const toast = document.getElementById("toast");
+      toast.classList.add("show");
+      setTimeout(() => toast.classList.remove("show"), 1200);
+    } catch {}
+  });
+
+  refresh();
+  setInterval(refresh, REFRESH_MS);
+</script>
+</body>
+</html>

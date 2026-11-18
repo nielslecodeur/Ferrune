@@ -37,6 +37,10 @@ struct Args {
     /// Where the wallet and the chain are saved. Defaults to `data/<port>`.
     #[arg(short, long)]
     data_dir: Option<PathBuf>,
+
+    /// Address of the web explorer. Defaults to `127.0.0.1:<port + 1000>`.
+    #[arg(short, long)]
+    web: Option<SocketAddr>,
 }
 
 impl Args {
@@ -48,6 +52,12 @@ impl Args {
         } else {
             self.bootstrap.clone()
         }
+    }
+
+    fn web(&self) -> SocketAddr {
+        self.web.unwrap_or_else(|| {
+            SocketAddr::from(([127, 0, 0, 1], self.listen.port().wrapping_add(1000)))
+        })
     }
 
     fn data_dir(&self) -> PathBuf {
@@ -144,6 +154,11 @@ async fn main() {
     tokio::spawn(network.clone().discover_peers());
     tokio::spawn(network.clone().check_peers());
     tokio::spawn(node::cli::run(network.clone(), wallet.clone()));
+    tokio::spawn(node::explorer::run(
+        args.web(),
+        network.clone(),
+        wallet.address(),
+    ));
     tokio::spawn(node::producer::run(network.clone(), wallet));
 
     tokio::select! {
