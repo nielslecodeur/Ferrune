@@ -139,6 +139,17 @@ src
     └── producer.rs    Block production
 ```
 
+## Profiling
+
+CPU flamegraphs of two nodes on localhost, over 30 seconds: a root node sending 3,000 transfers, and a node receiving them. Open them in a browser to zoom and search.
+
+- [Producer](docs/profiling/flamegraph-producer.svg): 68% of the CPU time is spent in `Uuid::new_v4`, which asks the system for random bytes for every message id.
+- [Receiver](docs/profiling/flamegraph-receiver.svg): 78% of the CPU time is spent writing the `INFO` log of each received transaction.
+
+Signature checks and hashing take about 3%. The nodes are mostly idle: the producer used about 1.4% of a core.
+
+They were recorded with [pprof](https://crates.io/crates/pprof) (`flamegraph` and `frame-pointer` features), on a release build with debug symbols and frame pointers.
+
 ## Tests
 
 ```bash
