@@ -17,3 +17,10 @@ tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
 uuid = { version = "1.29.0", features = ["v4", "serde", "fast-rng"] }
 ed25519-dalek = "2"
 hex = "0.4"
+
+[dev-dependencies]
+criterion = { version = "0.8.2", features = ["html_reports"] }
+
+[[bench]]
+name = "chain"
+harness = false

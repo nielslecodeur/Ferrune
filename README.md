@@ -127,7 +127,10 @@ Each node saves in its data directory:
 ## Project structure
 
 ```
+benches
+└── chain.rs           Criterion benchmarks
 src
+├── lib.rs             Library, used by the binary and the benchmarks
 ├── main.rs            Command line and node start
 ├── consts.rs          Settings (intervals, limits)
 ├── blockchain         Blocks, transactions, state, mempool, wallet, storage
@@ -139,7 +142,33 @@ src
     └── producer.rs    Block production
 ```
 
-## Profiling
+## Benchmarks
+
+```bash
+cargo bench
+```
+
+The benchmarks (`benches/chain.rs`, with [criterion](https://crates.io/crates/criterion)) measure the CPU-heavy parts of a node. The HTML report is written to `target/criterion/report/index.html`.
+
+Results on an Apple M3:
+
+| Benchmark | Time | Per transaction |
+|---|---|---|
+| Sign a transaction | 11.4 µs | |
+| Verify a transaction signature | 36 µs | |
+| Hash a block (100 tx) | 113 µs | 1.1 µs |
+| Insert 100 tx in the mempool | 130 µs | 1.3 µs |
+| Build a block (100 tx) | 3.8 ms | 38 µs |
+| Add a block (100 tx) | 3.6 ms | 36 µs |
+| Serialize a block (100 tx) | 21 µs | 0.2 µs |
+| Deserialize a block (100 tx) | 33 µs | 0.3 µs |
+| Next nonce, 10 / 100 / 1,000 pending tx | 58 ns / 355 ns / 3.6 µs | |
+| Proposer, 10 / 100 / 1,000 stakers | 0.22 µs / 3.1 µs / 43 µs | |
+
+- Building and adding a block are almost only signature checks: 100 × 36 µs. A node can apply about 28,000 transactions per second on one core, while the chain accepts at most 100 transactions every 5 seconds.
+- Computing the next nonce goes through the whole mempool, so it grows linearly with it.
+- Picking the proposer sorts the stakers, so it grows a bit faster than linearly.
+
 
 CPU flamegraphs of two nodes on localhost, over 30 seconds: a root node sending 3,000 transfers, and a node receiving them. Open them in a browser to zoom and search.
 
