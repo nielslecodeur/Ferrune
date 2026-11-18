@@ -111,13 +111,14 @@ impl Message {
             }
             MessageType::AskHeight => actions::sync::send_height(self.id, addr, network).await,
             MessageType::Height(height) => {
-                actions::sync::receive_height(*height, addr, network);
-                Ok(())
+                actions::sync::receive_height(*height, addr, network).await
             }
             MessageType::AskBlocks { from } => {
                 actions::sync::send_blocks(self.id, *from, addr, network).await
             }
-            MessageType::Blocks(blocks) => actions::sync::receive_blocks(blocks, addr, network),
+            MessageType::Blocks(blocks) => {
+                actions::sync::receive_blocks(blocks, addr, network).await
+            }
             MessageType::Reject(reason) => match expected {
                 State::WaitingForBlockConfirmation => {
                     actions::block::reject_block(reason, addr, network);
