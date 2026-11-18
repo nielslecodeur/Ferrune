@@ -158,6 +158,20 @@ impl Network {
             .add_transaction(transaction)?)
     }
 
+    /// Gives read access to the whole chain, for the explorer.
+    pub(crate) fn with_blockchain<R>(&self, read: impl FnOnce(&Blockchain) -> R) -> R {
+        read(
+            &self
+                .blockchain
+                .read()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        )
+    }
+
+    pub(crate) fn peers(&self) -> Vec<SocketAddr> {
+        self.connections.iter().map(|entry| *entry.key()).collect()
+    }
+
     pub(crate) fn mempool_len(&self) -> usize {
         self.blockchain
             .read()

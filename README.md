@@ -11,6 +11,7 @@ Each node keeps the full chain, exchanges blocks and transactions with its peers
 - **Consensus**: the proposer of each block is picked among the stakers, proportionally to their stake.
 - **Network**: handshake with a chain id, peer discovery, liveness with pings, gossip of blocks and transactions, and sync of missing blocks.
 - **Storage**: the wallet and the chain are saved on disk and loaded back on start.
+- **Explorer**: each node serves a web page with its blocks, accounts, mempool and peers.
 
 ## Getting started
 
@@ -43,6 +44,7 @@ cargo run -- --listen 127.0.0.1:8002 --bootstrap 127.0.0.1:8001
 | `-b, --bootstrap` | `127.0.0.1:8000` | Peers to connect to on start. Can be repeated. |
 | `-c, --chain-id` | `0` | Nodes only connect to nodes with the same chain id. |
 | `-d, --data-dir` | `data/<port>` | Where the wallet and the chain are saved. |
+| `-w, --web` | `127.0.0.1:<port + 1000>` | Address of the web explorer. |
 
 Logs are controlled with `RUST_LOG`, for example `RUST_LOG=debug`.
 
@@ -58,6 +60,18 @@ Once a node runs, type commands in its terminal. Transactions are signed with th
 | `stake <amount>` | Stakes coins, which makes the node a validator. |
 | `balance [address]` | Shows the balance and the stake of an account (the node's by default). |
 | `status` | Shows the height, the number of peers, the mempool size and the next proposer. |
+
+### Explorer
+
+Open `http://127.0.0.1:9000` for a node listening on port `8000` (the port plus 1000). The page refreshes every 2 seconds and shows:
+
+- the height, the number of peers, the mempool size and the next proposer,
+- every block, with its hash, its proposer and its transactions (click a block to open it),
+- the accounts with their balance and stake, the pending transactions and the peers.
+
+Click an address to copy it. The node's own address is tagged `you`, and the mint authority `mint`. The raw data is available as JSON on `/api`.
+
+By default, the explorer is only reachable from the same computer. Use `--web 0.0.0.0:9000` to open it to the network.
 
 ### Example
 
@@ -115,6 +129,7 @@ src
 └── node
     ├── actions        What a node does when it receives a message
     ├── cli.rs         Commands typed in the terminal
+    ├── explorer.rs    Web explorer (explorer.html)
     └── producer.rs    Block production
 ```
 
