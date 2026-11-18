@@ -192,6 +192,17 @@ impl Network {
                 .write()
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
 
+            // Otherwise the transaction would stay in the mempool forever.
+            if let Transaction::Transfer { from, amount, .. }
+            | Transaction::Stake { from, amount, .. } = &transaction
+            {
+                let available = blockchain.spendable(from);
+
+                if *amount > available {
+                    return Err(NetworkError::InsufficientBalance { available });
+                }
+            }
+
             let nonce = blockchain.next_nonce(&transaction);
             let transaction = wallet.sign_transaction(transaction.with_nonce(nonce))?;
 

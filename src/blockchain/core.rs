@@ -140,6 +140,25 @@ impl Blockchain {
         self.state.nonce(sender) + pending as u64
     }
 
+    /// Balance minus what the address already spends in the mempool.
+    pub fn spendable(&self, address: &Address) -> u64 {
+        let pending: u64 = self
+            .mempool
+            .iter()
+            .filter_map(|pending| match &pending.transaction {
+                Transaction::Transfer { from, amount, .. }
+                | Transaction::Stake { from, amount, .. }
+                    if from == address =>
+                {
+                    Some(*amount)
+                }
+                _ => None,
+            })
+            .sum();
+
+        self.state.balance(address).saturating_sub(pending)
+    }
+
     /// The signature is valid and comes from the sender of the transaction.
     pub fn is_valid_transaction(&self, transaction: &SignedTransaction) -> bool {
         transaction.transaction.validate_basic().is_ok()
@@ -598,6 +617,21 @@ mod tests {
             .add_transaction(signed_mint(&admin, &alice, 1, 0))
             .unwrap();
         assert_eq!(chain.next_nonce(&mint(&alice)), 1);
+    }
+
+    #[test]
+    fn spendable_counts_pending_transactions() {
+        let admin = Wallet::generate();
+        let alice = Wallet::generate();
+        let mut chain = signed_chain(&admin);
+        chain
+            .add_transaction(signed_mint(&admin, &alice, 100, 0))
+            .unwrap();
+        produce(&mut chain, &admin);
+
+        chain.add_transaction(signed_stake(&alice, 30)).unwrap();
+        assert_eq!(chain.spendable(&alice.address()), 70);
+        assert_eq!(chain.spendable(&admin.address()), 0);
     }
 
     #[test]

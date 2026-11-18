@@ -90,3 +90,10 @@ pub enum TransactionError {
 
 #[derive(Debug, Clone, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub struct Address(pub String);
+
+impl Address {
+    /// An address is a hex encoded ed25519 public key (32 bytes).
+    pub fn is_valid(&self) -> bool {
+        self.0.len() == 64 && self.0.bytes().all(|byte| byte.is_ascii_hexdigit())
+    }
+}

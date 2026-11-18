@@ -67,7 +67,7 @@ fn log_balance(network: &Network, address: &Address) {
 }
 
 /// The nonce is set when the transaction is submitted.
-fn parse_transaction(words: &[&str], own: &Address) -> Option<Transaction> {
+pub(crate) fn parse_transaction(words: &[&str], own: &Address) -> Option<Transaction> {
     let transaction = match words {
         ["mint", to, amount] => Transaction::Mint {
             to: Address((*to).into()),
@@ -88,6 +88,12 @@ fn parse_transaction(words: &[&str], own: &Address) -> Option<Transaction> {
         _ => return None,
     };
 
+    if let Transaction::Mint { to, .. } | Transaction::Transfer { to, .. } = &transaction
+        && !to.is_valid()
+    {
+        return None;
+    }
+
     transaction.validate_basic().ok()?;
     Some(transaction)
 }
@@ -98,13 +104,16 @@ mod tests {
 
     #[test]
     fn parses_commands() {
-        let own = Address("alice".into());
+        let alice = "a".repeat(64);
+        let bob = "b".repeat(64);
+        let own = Address(alice.clone());
         assert!(matches!(
-            parse_transaction(&["transfer", "bob", "10"], &own),
+            parse_transaction(&["transfer", &bob, "10"], &own),
             Some(Transaction::Transfer { amount: 10, .. })
         ));
-        assert!(parse_transaction(&["mint", "alice", "ten"], &own).is_none());
+        assert!(parse_transaction(&["mint", &alice, "ten"], &own).is_none());
         assert!(parse_transaction(&["stake", "0"], &own).is_none());
-        assert!(parse_transaction(&["transfer", "alice", "1"], &own).is_none());
+        assert!(parse_transaction(&["transfer", &alice, "1"], &own).is_none());
+        assert!(parse_transaction(&["transfer", "bob", "1"], &own).is_none());
     }
 }
