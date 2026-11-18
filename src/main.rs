@@ -76,7 +76,7 @@ fn load_chain(path: &std::path::Path) -> Blockchain {
         if let Err(error) = blockchain.add_block(block) {
             warn!(
                 height,
-                ?error,
+                %error,
                 "Invalid saved block, ignoring the next ones"
             );
             break;
@@ -121,11 +121,7 @@ async fn main() {
     if args.root && network.height().is_none() {
         let result = Blockchain::genesis(&wallet)
             .map_err(|error| format!("{error}"))
-            .and_then(|block| {
-                network
-                    .add_block(block)
-                    .map_err(|error| format!("{error:?}"))
-            });
+            .and_then(|block| network.add_block(block).map_err(|error| format!("{error}")));
 
         match result {
             Ok(()) => info!("Genesis block created"),
@@ -156,6 +152,9 @@ async fn main() {
             Ok(Err(error)) => error!(%error, "Listener stopped"),
             Err(error) => error!(%error, "Listener task panicked"),
         },
-        _ = tokio::signal::ctrl_c() => info!("Shutting down"),
+        _ = tokio::signal::ctrl_c() => {
+            info!("Shutting down");
+            network.disconnect_all().await;
+        }
     }
 }

@@ -66,6 +66,8 @@ pub(crate) async fn receive_blocks(
         }
     }
 
+    let mut last_added = None;
+
     for block in blocks {
         // Already received from another peer in the meantime.
         if block.height < network.next_height() {
@@ -73,9 +75,11 @@ pub(crate) async fn receive_blocks(
         }
 
         if let Err(error) = network.add_block(block.clone()) {
-            warn!(%peer, height = block.height, ?error, "Invalid block received, stopping sync");
-            return Ok(());
+            warn!(%peer, height = block.height, %error, "Invalid block received, stopping sync");
+            break;
         }
+
+        last_added = Some(block);
     }
 
     info!(
@@ -85,10 +89,16 @@ pub(crate) async fn receive_blocks(
         "Blocks received"
     );
 
+    let Some(last_added) = last_added else {
+        return Ok(());
+    };
+
     // A full batch means the peer may have more blocks.
     if blocks.len() == MAX_BLOCKS_PER_MESSAGE {
-        network.ask_blocks(addr, network.next_height()).await?;
+        return network.ask_blocks(addr, network.next_height()).await;
     }
 
+    // Our other peers may be behind too: they will sync when they see it.
+    network.broadcast_block(last_added, Some(peer)).await;
     Ok(())
 }

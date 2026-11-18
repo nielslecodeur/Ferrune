@@ -40,20 +40,20 @@ pub(crate) async fn receive_block(
             network.broadcast_block(block, Some(peer)).await;
             Ok(())
         }
-        Err(error) => {
-            warn!(%peer, height = block.height, ?error, "Invalid block received");
+        // The peer is ahead of us: the block is fine, we get the missing ones.
+        Err(BlockchainError::InvalidHeight { expected, received }) if received > expected => {
+            info!(%peer, height = received, local_height = ?network.height(), "Peer is ahead, syncing");
 
-            let message = Message::new(MessageType::Reject(RejectReason::InvalidBlock), Some(id));
+            let message = Message::new(MessageType::Ok, Some(id));
             network.reply(addr, &message).await?;
 
-            // The peer is ahead of us: get the missing blocks.
-            if let BlockchainError::InvalidHeight { expected, received } = error
-                && received > expected
-            {
-                network.ask_blocks(addr, expected).await?;
-            }
+            network.ask_blocks(addr, expected).await
+        }
+        Err(error) => {
+            warn!(%peer, height = block.height, %error, "Invalid block received");
 
-            Ok(())
+            let message = Message::new(MessageType::Reject(RejectReason::InvalidBlock), Some(id));
+            network.reply(addr, &message).await
         }
     }
 }

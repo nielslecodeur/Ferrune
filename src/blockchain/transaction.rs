@@ -31,10 +31,10 @@ impl Transaction {
                 }
             }
         }
-        if let Transaction::Transfer { from, to, .. } = self {
-            if from == to {
-                return Err(TransactionError::SelfTransfer);
-            }
+        if let Transaction::Transfer { from, to, .. } = self
+            && from == to
+        {
+            return Err(TransactionError::SelfTransfer);
         }
 
         Ok(())
@@ -80,9 +80,11 @@ impl SignedTransaction {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum TransactionError {
+    #[error("the amount is zero")]
     ZeroAmount,
+    #[error("the sender and the recipient are the same")]
     SelfTransfer,
 }
 
