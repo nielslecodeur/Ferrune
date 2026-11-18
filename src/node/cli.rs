@@ -14,7 +14,7 @@ const HELP: &str = "Commands: mint <to> <amount> | transfer <to> <amount> | stak
 ///
 /// Stdin is read on a plain thread: a blocking read can not be cancelled, and
 /// would prevent the runtime from shutting down.
-pub(crate) async fn run(network: Arc<Network>, wallet: Arc<Wallet>) {
+pub async fn run(network: Arc<Network>, wallet: Arc<Wallet>) {
     let (sender, mut receiver) = mpsc::unbounded_channel();
 
     std::thread::spawn(move || {

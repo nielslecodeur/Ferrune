@@ -1,5 +1,5 @@
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-pub(crate) enum State {
+pub enum State {
     None,
 
     StartingConnection,

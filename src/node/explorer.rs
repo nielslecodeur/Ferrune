@@ -156,7 +156,7 @@ fn snapshot(network: &Network, own: &Address, can_submit: bool) -> Snapshot {
 
 /// Serves the explorer page on `/`, the node's state as JSON on `/api`, and
 /// receives transactions on `POST /api/transaction`.
-pub(crate) async fn run(addr: SocketAddr, network: Arc<Network>, wallet: Arc<Wallet>) {
+pub async fn run(addr: SocketAddr, network: Arc<Network>, wallet: Arc<Wallet>) {
     let listener = match TcpListener::bind(addr).await {
         Ok(listener) => listener,
         Err(error) => {

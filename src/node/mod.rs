@@ -1,4 +1,4 @@
 pub(crate) mod actions;
-pub(crate) mod cli;
-pub(crate) mod explorer;
-pub(crate) mod producer;
+pub mod cli;
+pub mod explorer;
+pub mod producer;

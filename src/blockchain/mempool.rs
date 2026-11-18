@@ -37,6 +37,10 @@ impl Mempool {
         self.transactions.retain(|_, transaction| keep(transaction));
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.transactions.is_empty()
+    }
+
     pub fn len(&self) -> usize {
         self.transactions.len()
     }

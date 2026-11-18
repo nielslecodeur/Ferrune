@@ -8,7 +8,7 @@ use crate::consts::BLOCK_INTERVAL;
 use crate::network::Network;
 
 /// Produces a block from the mempool whenever this node is the expected proposer.
-pub(crate) async fn run(network: Arc<Network>, wallet: Arc<Wallet>) {
+pub async fn run(network: Arc<Network>, wallet: Arc<Wallet>) {
     let mut interval = tokio::time::interval(BLOCK_INTERVAL);
     interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 

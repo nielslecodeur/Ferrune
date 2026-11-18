@@ -27,7 +27,7 @@ use crate::network::state::StateHandler;
 
 type Writer = Arc<Mutex<OwnedWriteHalf>>;
 
-pub(crate) struct Network {
+pub struct Network {
     listen_addr: SocketAddr,
     chain_id: u8,
     blockchain: Arc<RwLock<Blockchain>>,
@@ -48,7 +48,7 @@ pub(crate) struct Network {
 }
 
 impl Network {
-    pub(crate) fn new(
+    pub fn new(
         listen_addr: SocketAddr,
         chain_id: u8,
         blockchain: Arc<RwLock<Blockchain>>,
@@ -76,7 +76,7 @@ impl Network {
         self.chain_id
     }
 
-    pub(crate) fn height(&self) -> Option<u64> {
+    pub fn height(&self) -> Option<u64> {
         self.blockchain
             .read()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -95,7 +95,7 @@ impl Network {
         self.height().map_or(0, |height| height.saturating_add(1))
     }
 
-    pub(crate) fn add_block(&self, block: Block) -> Result<(), BlockchainError> {
+    pub fn add_block(&self, block: Block) -> Result<(), BlockchainError> {
         self.blockchain
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
@@ -233,7 +233,7 @@ impl Network {
             .ok_or(NetworkError::TcpStreamNotConnected(addr))
     }
 
-    pub(crate) async fn listen(self: Arc<Self>) -> Result<(), NetworkError> {
+    pub async fn listen(self: Arc<Self>) -> Result<(), NetworkError> {
         let listener = TcpListener::bind(self.listen_addr).await?;
         info!(addr = %self.listen_addr, chain_id = self.chain_id, "Listening");
 
@@ -249,7 +249,7 @@ impl Network {
         }
     }
 
-    pub(crate) async fn connect_to(self: Arc<Self>, addr: SocketAddr) -> Result<(), NetworkError> {
+    pub async fn connect_to(self: Arc<Self>, addr: SocketAddr) -> Result<(), NetworkError> {
         if addr == self.listen_addr
             || self.is_connected(&addr)
             || self.ongoing_connections.contains_key(&addr)
@@ -296,7 +296,7 @@ impl Network {
         });
     }
 
-    pub(crate) async fn discover_peers(self: Arc<Self>) {
+    pub async fn discover_peers(self: Arc<Self>) {
         let mut interval = tokio::time::interval(DISCOVERY_INTERVAL);
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
@@ -318,7 +318,7 @@ impl Network {
     }
 
     /// Pings every peer, and drops the ones that stayed silent for too long.
-    pub(crate) async fn check_peers(self: Arc<Self>) {
+    pub async fn check_peers(self: Arc<Self>) {
         let mut interval = tokio::time::interval(PING_INTERVAL);
         interval.set_missed_tick_behavior(MissedTickBehavior::Delay);
 
@@ -446,7 +446,7 @@ impl Network {
     }
 
     /// Tells every peer we are leaving.
-    pub(crate) async fn disconnect_all(&self) {
+    pub async fn disconnect_all(&self) {
         let peers: Vec<SocketAddr> = self.connections.iter().map(|entry| *entry.key()).collect();
 
         for peer in peers {
