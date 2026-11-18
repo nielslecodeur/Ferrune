@@ -6,18 +6,13 @@ use clap::Parser;
 use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
-use crate::blockchain::core::Blockchain;
-use crate::blockchain::state::State;
-use crate::blockchain::storage;
-use crate::blockchain::transaction::Address;
-use crate::blockchain::wallet::Wallet;
-use crate::consts::{DEFAULT_BOOTSTRAP, MAIN_CHAIN_ID};
-use crate::network::Network;
-
-mod blockchain;
-mod consts;
-mod network;
-mod node;
+use ferrune::blockchain::core::Blockchain;
+use ferrune::blockchain::state::State;
+use ferrune::blockchain::storage;
+use ferrune::blockchain::transaction::Address;
+use ferrune::blockchain::wallet::Wallet;
+use ferrune::consts::{DEFAULT_BOOTSTRAP, MAIN_CHAIN_ID};
+use ferrune::network::Network;
 
 #[derive(Parser)]
 #[command(version, about)]
@@ -153,13 +148,13 @@ async fn main() {
 
     tokio::spawn(network.clone().discover_peers());
     tokio::spawn(network.clone().check_peers());
-    tokio::spawn(node::cli::run(network.clone(), wallet.clone()));
-    tokio::spawn(node::explorer::run(
+    tokio::spawn(ferrune::node::cli::run(network.clone(), wallet.clone()));
+    tokio::spawn(ferrune::node::explorer::run(
         args.web(),
         network.clone(),
         wallet.clone(),
     ));
-    tokio::spawn(node::producer::run(network.clone(), wallet));
+    tokio::spawn(ferrune::node::producer::run(network.clone(), wallet));
 
     tokio::select! {
         result = listener => match result {

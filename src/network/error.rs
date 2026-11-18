@@ -6,7 +6,7 @@ use thiserror::Error;
 use crate::network::state::StateError;
 
 #[derive(Error, Debug)]
-pub(crate) enum NetworkError {
+pub enum NetworkError {
     #[error("No active TCP stream for {0}")]
     TcpStreamNotConnected(SocketAddr),
 

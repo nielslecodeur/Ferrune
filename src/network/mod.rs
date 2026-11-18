@@ -3,9 +3,9 @@ mod error;
 pub(crate) mod message;
 mod state;
 
-pub(crate) use core::Network;
+pub use core::Network;
 
-pub(crate) use error::NetworkError;
+pub use error::NetworkError;
 use state::{State, StateError};
 
 #[cfg(test)]

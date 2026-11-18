@@ -4,7 +4,7 @@ use uuid::Uuid;
 use super::State;
 
 #[derive(Debug, Error)]
-pub(crate) enum StateError {
+pub enum StateError {
     #[error("A state already exists for ID {0}")]
     Collision(Uuid),
 
