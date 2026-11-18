@@ -1,14 +1,17 @@
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 
 use clap::Parser;
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 use crate::blockchain::core::Blockchain;
 use crate::blockchain::state::State;
+use crate::blockchain::storage;
 use crate::blockchain::transaction::Address;
-use crate::consts::{DEFAULT_BOOTSTRAP, MAIN_CHAIN_ID, MINT_AUTHORITY};
+use crate::blockchain::wallet::Wallet;
+use crate::consts::{DEFAULT_BOOTSTRAP, MAIN_CHAIN_ID};
 use crate::network::Network;
 
 mod blockchain;
@@ -30,6 +33,10 @@ struct Args {
 
     #[arg(short, long, default_value_t = MAIN_CHAIN_ID)]
     chain_id: u8,
+
+    /// Where the wallet and the chain are saved. Defaults to `data/<port>`.
+    #[arg(short, long)]
+    data_dir: Option<PathBuf>,
 }
 
 impl Args {
@@ -42,6 +49,41 @@ impl Args {
             self.bootstrap.clone()
         }
     }
+
+    fn data_dir(&self) -> PathBuf {
+        self.data_dir
+            .clone()
+            .unwrap_or_else(|| PathBuf::from("data").join(self.listen.port().to_string()))
+    }
+}
+
+/// Replays the saved blocks, stopping at the first invalid one.
+fn load_chain(path: &std::path::Path) -> Blockchain {
+    // The mint authority is set by the genesis block.
+    let mut blockchain = Blockchain::new(State::new(Address(String::new())));
+
+    let blocks = match storage::load(path) {
+        Ok(blocks) => blocks,
+        Err(error) => {
+            warn!(%error, "Failed to load the chain, starting from scratch");
+            return blockchain;
+        }
+    };
+
+    for block in blocks {
+        let height = block.height;
+
+        if let Err(error) = blockchain.add_block(block) {
+            warn!(
+                height,
+                ?error,
+                "Invalid saved block, ignoring the next ones"
+            );
+            break;
+        }
+    }
+
+    blockchain
 }
 
 #[tokio::main]
@@ -53,10 +95,43 @@ async fn main() {
         .init();
 
     let args = Args::parse();
-    let blockchain = Arc::new(RwLock::new(Blockchain::new(State::new(Address(
-        MINT_AUTHORITY.into(),
-    )))));
-    let network = Arc::new(Network::new(args.listen, args.chain_id, blockchain));
+    let data_dir = args.data_dir();
+    let chain_file = data_dir.join("chain.jsonl");
+
+    let wallet = match Wallet::load_or_create(&data_dir.join("wallet.key")) {
+        Ok(wallet) => Arc::new(wallet),
+        Err(error) => {
+            error!(%error, "Failed to load the wallet");
+            return;
+        }
+    };
+    info!(address = %wallet.address().0, "Wallet loaded");
+
+    let blockchain = load_chain(&chain_file);
+    info!(height = ?blockchain.height(), "Chain loaded");
+
+    let blockchain = Arc::new(RwLock::new(blockchain));
+    let network = Arc::new(Network::new(
+        args.listen,
+        args.chain_id,
+        blockchain,
+        chain_file,
+    ));
+
+    if args.root && network.height().is_none() {
+        let result = Blockchain::genesis(&wallet)
+            .map_err(|error| format!("{error}"))
+            .and_then(|block| {
+                network
+                    .add_block(block)
+                    .map_err(|error| format!("{error:?}"))
+            });
+
+        match result {
+            Ok(()) => info!("Genesis block created"),
+            Err(error) => error!(%error, "Failed to create the genesis block"),
+        }
+    }
 
     let listener = tokio::spawn(network.clone().listen());
 
@@ -72,7 +147,8 @@ async fn main() {
 
     tokio::spawn(network.clone().discover_peers());
     tokio::spawn(network.clone().check_peers());
-    tokio::spawn(node::cli::run(network.clone()));
+    tokio::spawn(node::cli::run(network.clone(), wallet.clone()));
+    tokio::spawn(node::producer::run(network.clone(), wallet));
 
     tokio::select! {
         result = listener => match result {

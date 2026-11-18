@@ -33,4 +33,7 @@ pub(crate) enum NetworkError {
 
     #[error("The chain is different")]
     DifferentChain,
+
+    #[error("Invalid transaction")]
+    InvalidTransaction,
 }

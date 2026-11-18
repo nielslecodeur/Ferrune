@@ -1,4 +1,5 @@
 use std::net::SocketAddr;
+use std::path::PathBuf;
 use std::sync::{Arc, RwLock};
 use std::time::Instant;
 
@@ -13,7 +14,9 @@ use tracing::{debug, info, warn};
 
 use crate::blockchain::block::Block;
 use crate::blockchain::core::{Blockchain, BlockchainError};
-use crate::blockchain::transaction::Transaction;
+use crate::blockchain::storage;
+use crate::blockchain::transaction::{Address, SignedTransaction, Transaction};
+use crate::blockchain::wallet::Wallet;
 use crate::consts::{
     CONNECT_TIMEOUT, DISCOVERY_INTERVAL, MAX_BLOCKS_PER_MESSAGE, MAX_PEERS, PEER_TIMEOUT,
     PING_INTERVAL,
@@ -28,6 +31,8 @@ pub(crate) struct Network {
     listen_addr: SocketAddr,
     chain_id: u8,
     blockchain: Arc<RwLock<Blockchain>>,
+    /// File where every added block is saved.
+    chain_file: PathBuf,
 
     states: StateHandler,
 
@@ -47,11 +52,13 @@ impl Network {
         listen_addr: SocketAddr,
         chain_id: u8,
         blockchain: Arc<RwLock<Blockchain>>,
+        chain_file: PathBuf,
     ) -> Self {
         Self {
             listen_addr,
             chain_id,
             blockchain,
+            chain_file,
             states: StateHandler::default(),
             dialing: DashSet::new(),
             ongoing_connections: DashMap::new(),
@@ -92,11 +99,58 @@ impl Network {
         self.blockchain
             .write()
             .unwrap_or_else(|poisoned| poisoned.into_inner())
-            .add_block(block)
+            .add_block(block.clone())?;
+
+        if let Err(error) = storage::append(&self.chain_file, &block) {
+            warn!(%error, height = block.height, "Failed to save block");
+        }
+
+        Ok(())
+    }
+
+    pub(crate) fn build_block(&self, wallet: &Wallet) -> Result<Option<Block>, NetworkError> {
+        Ok(self
+            .blockchain
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .build_block(wallet)?)
+    }
+
+    pub(crate) fn is_valid_transaction(&self, transaction: &SignedTransaction) -> bool {
+        self.blockchain
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .is_valid_transaction(transaction)
+    }
+
+    pub(crate) fn proposer(&self) -> Option<Address> {
+        self.blockchain
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .proposer()
+    }
+
+    /// Balance and stake of an account.
+    pub(crate) fn account(&self, address: &Address) -> (u64, u64) {
+        let blockchain = self
+            .blockchain
+            .read()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let account = blockchain
+            .state
+            .accounts
+            .get(address)
+            .cloned()
+            .unwrap_or_default();
+
+        (account.balance, account.stake)
     }
 
     /// Returns `false` if the transaction was already in the mempool.
-    pub(crate) fn add_transaction(&self, transaction: Transaction) -> Result<bool, NetworkError> {
+    pub(crate) fn add_transaction(
+        &self,
+        transaction: SignedTransaction,
+    ) -> Result<bool, NetworkError> {
         Ok(self
             .blockchain
             .write()
@@ -116,7 +170,8 @@ impl Network {
     pub(crate) async fn submit_transaction(
         &self,
         transaction: Transaction,
-    ) -> Result<Transaction, NetworkError> {
+        wallet: &Wallet,
+    ) -> Result<SignedTransaction, NetworkError> {
         let transaction = {
             let mut blockchain = self
                 .blockchain
@@ -124,7 +179,12 @@ impl Network {
                 .unwrap_or_else(|poisoned| poisoned.into_inner());
 
             let nonce = blockchain.next_nonce(&transaction);
-            let transaction = transaction.with_nonce(nonce);
+            let transaction = wallet.sign_transaction(transaction.with_nonce(nonce))?;
+
+            if !blockchain.is_valid_transaction(&transaction) {
+                return Err(NetworkError::InvalidTransaction);
+            }
+
             blockchain.add_transaction(transaction.clone())?;
             transaction
         };
@@ -313,7 +373,7 @@ impl Network {
     pub(crate) async fn send_transaction(
         &self,
         addr: SocketAddr,
-        transaction: Transaction,
+        transaction: SignedTransaction,
     ) -> Result<(), NetworkError> {
         self.converse(addr, MessageType::SendTransaction(transaction))
             .await
@@ -322,7 +382,7 @@ impl Network {
     /// Sends to every peer except `exclude` (usually the peer we received it from).
     pub(crate) async fn broadcast_transaction(
         &self,
-        transaction: &Transaction,
+        transaction: &SignedTransaction,
         exclude: Option<SocketAddr>,
     ) {
         let peers: Vec<SocketAddr> = self

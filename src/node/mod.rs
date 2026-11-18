@@ -1,2 +1,3 @@
 pub(crate) mod actions;
 pub(crate) mod cli;
+pub(crate) mod producer;
