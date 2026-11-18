@@ -40,7 +40,7 @@ impl State {
             .unwrap_or(0)
     }
 
-    /// Le signataire doit provenir d'une verification cryptographique externe.
+    /// `verified_signer` must come from a signature check (see `SignedTransaction`).
     pub fn apply_transaction(
         &mut self,
         transaction: &Transaction,

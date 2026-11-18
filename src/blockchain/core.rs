@@ -93,6 +93,7 @@ impl Blockchain {
         Ok(())
     }
 
+    /// Applies every transaction of the block, or none of them.
     pub fn apply_finalized_block<F>(
         &mut self,
         block: Block,
@@ -101,24 +102,22 @@ impl Blockchain {
     where
         F: Fn(&SignedTransaction) -> Result<Address, BlockchainError>,
     {
-        // 1. Vérifier le bloc avec validate_block.
         self.validate_block(&block)?;
 
-        // 2. Cloner self.state dans un état temporaire.
-        let mut bis = self.state.clone();
-        // 3. Pour chaque transaction :
-        //    - Obtenir son signataire avec verify_signer.
-        //    - L'appliquer sur l'état temporaire.
-        //    - Convertir les erreurs StateError en BlockchainError.
+        // Transactions are applied on a copy, so a failing one leaves the state untouched.
+        let mut state = self.state.clone();
+
         for transaction in &block.transactions {
             let signer = verify_signer(transaction)?;
 
-            bis.apply_transaction(&transaction.transaction, &signer)
+            state
+                .apply_transaction(&transaction.transaction, &signer)
                 .map_err(BlockchainError::InvalidTransaction)?;
         }
-        // 4. Remplacer self.state par l'état temporaire.
-        self.state = bis;
-        // 5. Ajouter le bloc à self.blocks.
+
+        self.state = state;
+
+        // Drops the included transactions, and the ones whose nonce is now too old.
         self.mempool.remove_included(&block.transactions);
         let state = &self.state;
         self.mempool.retain(|pending| {
@@ -318,7 +317,7 @@ mod tests {
             signature: String::new(),
         }
     }
-    // Simule un verificateur uniquement pour ces tests, sans authentification reelle.
+    // Fake verifier for these tests: the signer is the declared sender.
     fn signer(tx: &SignedTransaction) -> Result<Address, BlockchainError> {
         Ok(match &tx.transaction {
             Transaction::Mint { .. } => address("admin"),
