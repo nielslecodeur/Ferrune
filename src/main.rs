@@ -157,7 +157,7 @@ async fn main() {
     tokio::spawn(node::explorer::run(
         args.web(),
         network.clone(),
-        wallet.address(),
+        wallet.clone(),
     ));
     tokio::spawn(node::producer::run(network.clone(), wallet));
 

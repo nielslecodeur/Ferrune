@@ -36,4 +36,7 @@ pub(crate) enum NetworkError {
 
     #[error("Invalid transaction")]
     InvalidTransaction,
+
+    #[error("Insufficient balance: {available} available")]
+    InsufficientBalance { available: u64 },
 }

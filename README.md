@@ -50,7 +50,7 @@ Logs are controlled with `RUST_LOG`, for example `RUST_LOG=debug`.
 
 ### Commands
 
-Once a node runs, type commands in its terminal. Transactions are signed with the node's wallet, and their nonce is set automatically.
+Once a node runs, type commands in its terminal (or use the explorer). Transactions are signed with the node's wallet, and their nonce is set automatically. A transaction is refused if the address is not valid or if the amount is more than the available coins.
 
 | Command | Description |
 |---|---|
@@ -71,7 +71,13 @@ Open `http://127.0.0.1:9000` for a node listening on port `8000` (the port plus 
 
 Click an address to copy it. The node's own address is tagged `you`, and the mint authority `mint`. The raw data is available as JSON on `/api`.
 
-By default, the explorer is only reachable from the same computer. Use `--web 0.0.0.0:9000` to open it to the network.
+The **Your wallet** panel shows the node's balance, stake and available coins (the balance minus what is already in the mempool), and sends transactions signed with the node's wallet:
+
+- **Transfer**: sends coins to an address. Click **Send** on an account to fill in its address.
+- **Stake**: stakes coins to become a validator.
+- **Mint**: creates coins. Only shown on the root node.
+
+By default, the explorer is only reachable from the same computer. Use `--web 0.0.0.0:9000` to open it to the network: other computers can then look at the page, but only the computer running the node can send transactions.
 
 ### Example
 
