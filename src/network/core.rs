@@ -420,6 +420,17 @@ impl Network {
         Ok(())
     }
 
+    /// Tells every peer we are leaving.
+    pub(crate) async fn disconnect_all(&self) {
+        let peers: Vec<SocketAddr> = self.connections.iter().map(|entry| *entry.key()).collect();
+
+        for peer in peers {
+            if let Err(error) = self.disconnect(peer).await {
+                debug!(%peer, %error, "Failed to disconnect");
+            }
+        }
+    }
+
     async fn converse(
         &self,
         addr: SocketAddr,

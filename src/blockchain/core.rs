@@ -13,15 +13,23 @@ pub struct Blockchain {
     pub mempool: Mempool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum BlockchainError {
+    #[error("invalid height: expected {expected}, received {received}")]
     InvalidHeight { expected: u64, received: u64 },
+    #[error("invalid previous hash")]
     InvalidPreviousHash,
+    #[error("invalid hash")]
     InvalidHash,
+    #[error("height overflow")]
     HeightOverflow,
+    #[error("failed to compute the hash: {0}")]
     HashCalculation(serde_json::Error),
+    #[error("invalid transaction: {0}")]
     InvalidTransaction(StateError),
+    #[error("invalid signature")]
     InvalidSignature,
+    #[error("unexpected proposer")]
     InvalidProposer,
 }
 

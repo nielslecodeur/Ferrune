@@ -132,12 +132,17 @@ impl State {
     }
 }
 
-#[derive(Debug)]
+#[derive(Debug, thiserror::Error)]
 pub enum StateError {
+    #[error("invalid transaction: {transaction_error}")]
     InvalidTransaction { transaction_error: TransactionError },
+    #[error("insufficient balance ({balance})")]
     InsufficientBalance { balance: u64 },
+    #[error("invalid nonce: expected {expected}, received {received}")]
     InvalidNonce { expected: u64, received: u64 },
+    #[error("the signer is not allowed to send this transaction")]
     Unauthorized,
+    #[error("overflow")]
     Overflow,
 }
 

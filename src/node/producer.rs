@@ -25,7 +25,7 @@ pub(crate) async fn run(network: Arc<Network>, wallet: Arc<Wallet>) {
         };
 
         if let Err(error) = network.add_block(block.clone()) {
-            warn!(?error, "Failed to add produced block");
+            warn!(%error, "Failed to add produced block");
             continue;
         }
 

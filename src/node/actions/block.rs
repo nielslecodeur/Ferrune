@@ -41,7 +41,7 @@ pub(crate) async fn receive_block(
             Ok(())
         }
         Err(error) => {
-            warn!(%peer, height = block.height, ?error, "Invalid block received");
+            warn!(%peer, height = block.height, %error, "Invalid block received");
 
             let message = Message::new(MessageType::Reject(RejectReason::InvalidBlock), Some(id));
             network.reply(addr, &message).await?;

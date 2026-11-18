@@ -73,7 +73,7 @@ pub(crate) async fn receive_blocks(
         }
 
         if let Err(error) = network.add_block(block.clone()) {
-            warn!(%peer, height = block.height, ?error, "Invalid block received, stopping sync");
+            warn!(%peer, height = block.height, %error, "Invalid block received, stopping sync");
             return Ok(());
         }
     }
